@@ -119,25 +119,25 @@ router.get('/verify', async (req, res) => {
     // Mark token as used
     await db.markTokenAsUsed(token);
 
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = tokenData.email.toLowerCase().trim();
+
     // Get or create user (creates as judge by default if new)
-    const user = await db.getOrCreateUser(tokenData.email);
+    const user = await db.getOrCreateUser(normalizedEmail);
     const userWithTeam = await db.getUserWithTeam(user.email);
     const roleInfo = await db.getUserRole(user.email);
 
     // Check if user has accepted all required policies
     // Note: SQLite stores booleans as 0/1, so we check for truthy values (1 or true)
     // Also handle null/undefined for existing users who haven't accepted policies yet
-    const hasAcceptedPolicies = user.privacy_policy_accepted && 
-                                 user.terms_accepted && 
-                                 user.acceptable_use_accepted &&
-                                 (user.privacy_policy_accepted === 1 || user.privacy_policy_accepted === true) &&
+    const hasAcceptedPolicies = (user.privacy_policy_accepted === 1 || user.privacy_policy_accepted === true) &&
                                  (user.terms_accepted === 1 || user.terms_accepted === true) &&
                                  (user.acceptable_use_accepted === 1 || user.acceptable_use_accepted === true);
 
     // If policies not accepted, redirect to policy acceptance page
     if (!hasAcceptedPolicies) {
       req.session.pendingAuth = {
-        email: user.email,
+        email: normalizedEmail,
         tokenData: tokenData
       };
       const eventSettings = await db.getEventSettings();
@@ -266,7 +266,8 @@ router.post('/accept-policies', async (req, res) => {
       });
     }
 
-    const email = req.session.pendingAuth.email;
+    // Normalize email to lowercase for consistency
+    const email = req.session.pendingAuth.email.toLowerCase().trim();
     const policyData = {
       privacy_policy_accepted: true,
       terms_accepted: true,
@@ -277,11 +278,22 @@ router.post('/accept-policies', async (req, res) => {
       email_preferences: emailPreferences === '1' || emailPreferences === true
     };
 
+    // Ensure user exists (get or create)
+    let user = await db.getUserByEmail(email);
+    if (!user) {
+      // User doesn't exist, create them
+      user = await db.getOrCreateUser(email);
+    }
+
     // Update user with policy acceptance
     await db.updateUser(email, policyData);
 
-    // Get updated user info
-    const user = await db.getUserByEmail(email);
+    // Get updated user info (refresh from database)
+    user = await db.getUserByEmail(email);
+    if (!user) {
+      throw new Error('Failed to retrieve user after policy acceptance');
+    }
+
     const userWithTeam = await db.getUserWithTeam(user.email);
     const roleInfo = await db.getUserRole(user.email);
 
@@ -319,6 +331,49 @@ router.post('/accept-policies', async (req, res) => {
     res.redirect('/');
   } catch (error) {
     console.error('Accept policies error:', error);
+    
+    // Try to recover by logging the user in if we have their email
+    const email = req.session.pendingAuth?.email;
+    if (email) {
+      try {
+        const user = await db.getUserByEmail(email.toLowerCase().trim());
+        if (user) {
+          const userWithTeam = await db.getUserWithTeam(user.email);
+          const roleInfo = await db.getUserRole(user.email);
+          
+          const jwtPayload = {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: roleInfo.role || 'judge',
+            team_id: roleInfo.team_id || null,
+            team_name: userWithTeam?.team_name || null
+          };
+
+          const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+          res.cookie('token', jwtToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            sameSite: 'lax'
+          });
+
+          req.session.user = jwtPayload;
+          req.session.currentRound = req.session.currentRound || 1;
+          delete req.session.pendingAuth;
+
+          const role = jwtPayload.role;
+          if (role === 'participant') {
+            return res.redirect('/participant');
+          }
+          return res.redirect('/');
+        }
+      } catch (recoveryError) {
+        console.error('Error during recovery login:', recoveryError);
+      }
+    }
+    
     const eventSettings = await db.getEventSettings();
     res.render('auth/accept-policies', {
       title: 'Accept Policies',
