@@ -11,8 +11,9 @@ RUN npm ci --only=production
 # Copy application files
 COPY . .
 
-# Create directories for uploads and database
-RUN mkdir -p public/uploads/screenshots db
+# Create directories for uploads and database with proper permissions
+RUN mkdir -p public/uploads/screenshots db && \
+    chmod -R 755 db public/uploads
 
 # Expose port
 EXPOSE 3000
