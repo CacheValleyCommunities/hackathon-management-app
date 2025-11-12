@@ -8,10 +8,10 @@ services:
     container_name: code-camp-judging-app
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "3000:3000"
     environment:
       - NODE_ENV=production
-      - PORT=${PORT:-3000}
+      - PORT=3000
       - JWT_SECRET=${JWT_SECRET}
       - SESSION_SECRET=${SESSION_SECRET}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
