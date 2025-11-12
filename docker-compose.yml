@@ -18,8 +18,8 @@ services:
       - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-}
       - MAILGUN_FROM_EMAIL=${MAILGUN_FROM_EMAIL:-}
     volumes:
-      # Persist database
-      - judging-db:/app/db/judging.db
+      # Persist database directory
+      - judging-db:/app/db
       # Persist uploads
       - judging-uploads:/app/public/uploads
     healthcheck:
@@ -28,4 +28,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  judging-db:
+  judging-uploads:
 

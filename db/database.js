@@ -12,16 +12,30 @@ const init = () => {
     // Ensure the db directory exists
     const dbDir = path.dirname(DB_PATH);
     if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
+      try {
+        fs.mkdirSync(dbDir, { recursive: true, mode: 0o755 });
+      } catch (mkdirErr) {
+        console.error('Error creating db directory:', mkdirErr);
+        // Continue anyway, might already exist or have permission issues
+      }
     }
 
-    db = new sqlite3.Database(DB_PATH, (err) => {
+    // Open database with explicit mode for creation
+    db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
       if (err) {
         console.error('Error opening database:', err);
+        console.error('Database path:', DB_PATH);
+        console.error('Directory exists:', fs.existsSync(dbDir));
+        try {
+          fs.accessSync(dbDir, fs.constants.W_OK);
+          console.error('Directory is writable: true');
+        } catch (accessErr) {
+          console.error('Directory is writable: false', accessErr.message);
+        }
         reject(err);
         return;
       }
-      console.log('Connected to SQLite database');
+      console.log('Connected to SQLite database at:', DB_PATH);
       // Enable foreign key constraints
       db.run('PRAGMA foreign_keys = ON', (err) => {
         if (err) {
