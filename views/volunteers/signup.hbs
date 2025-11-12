@@ -1,0 +1,112 @@
+<div class="max-w-2xl mx-auto px-4 py-12">
+    <div class="mb-8">
+        <h1 class="text-4xl font-bold text-gray-900 tracking-tight mb-4">Volunteer Signup</h1>
+        <p class="text-lg text-gray-600">
+            Thank you for your interest in volunteering for {{eventSettings.event_name}}! Please fill out the form below
+            and we'll get back to you soon.
+        </p>
+    </div>
+
+    {{#if error}}
+    <div class="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+        <p class="text-red-800 text-sm">{{error}}</p>
+    </div>
+    {{/if}}
+
+    {{#if success}}
+    <div class="mb-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
+        <p class="text-green-800 text-sm">{{success}}</p>
+    </div>
+    {{/if}}
+
+    {{#unless success}}
+    <form method="POST" action="/volunteers/signup" class="space-y-6">
+        <!-- Name -->
+        <div>
+            <label for="name" class="block text-sm font-semibold text-gray-700 mb-2">
+                Full Name <span class="text-red-500">*</span>
+            </label>
+            <input type="text" id="name" name="name" required
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"
+                placeholder="John Doe" value="{{formData.name}}">
+        </div>
+
+        <!-- Email -->
+        <div>
+            <label for="email" class="block text-sm font-semibold text-gray-700 mb-2">
+                Email Address <span class="text-red-500">*</span>
+            </label>
+            <input type="email" id="email" name="email" required
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"
+                placeholder="john@example.com" value="{{formData.email}}">
+        </div>
+
+        <!-- Phone -->
+        <div>
+            <label for="phone" class="block text-sm font-semibold text-gray-700 mb-2">
+                Phone Number
+            </label>
+            <input type="tel" id="phone" name="phone"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"
+                placeholder="(555) 123-4567" value="{{formData.phone}}">
+        </div>
+
+        <!-- Company -->
+        <div>
+            <label for="company" class="block text-sm font-semibold text-gray-700 mb-2">
+                Company / Organization
+            </label>
+            <input type="text" id="company" name="company"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"
+                placeholder="Acme Inc." value="{{formData.company}}">
+        </div>
+
+        <!-- Help Options -->
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-3">
+                How would you like to help? <span class="text-red-500">*</span>
+            </label>
+            <div class="space-y-3">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="help_judging" value="1"
+                        class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-2 focus:ring-gray-900"
+                        {{#if formData.help_judging}}checked{{/if}}>
+                    <span class="text-gray-700">Judging - Help evaluate projects and provide feedback</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="help_logistics" value="1"
+                        class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-2 focus:ring-gray-900"
+                        {{#if formData.help_logistics}}checked{{/if}}>
+                    <span class="text-gray-700">Logistics - Help with event setup, registration, and operations</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="help_mentor" value="1"
+                        class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-2 focus:ring-gray-900"
+                        {{#if formData.help_mentor}}checked{{/if}}>
+                    <span class="text-gray-700">Mentoring - Provide guidance and support to participants</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+            <label for="description" class="block text-sm font-semibold text-gray-700 mb-2">
+                Description of how you'd like to help
+            </label>
+            <textarea id="description" name="description" rows="5"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition resize-y"
+                placeholder="Tell us more about how you'd like to contribute, your relevant experience, availability, or any specific areas where you think you could be most helpful...">{{formData.description}}</textarea>
+            <p class="text-xs text-gray-500 mt-1">Optional: Provide additional details about how you'd like to help</p>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="pt-4">
+            <button type="submit"
+                class="w-full px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                Submit Application
+            </button>
+        </div>
+    </form>
+    {{/unless}}
+</div>
+

@@ -1,0 +1,101 @@
+<div class="min-h-screen bg-white">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">My Scores</h1>
+                    <p class="text-sm text-gray-500 mt-2">Review and edit your submitted scores</p>
+                </div>
+                <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                    ← Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Container -->
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {{#if scores.length}}
+        <!-- Scores by Round -->
+        {{#each scoresByRound}}
+        <div class="mb-12">
+            <!-- Round Header -->
+            <div class="mb-6">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-2xl font-bold text-gray-900 tracking-tight">Round {{@key}}</h2>
+                    {{#if (contains ../lockedRounds @key)}}
+                    <span
+                        class="inline-flex items-center gap-2 px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd"
+                                d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        Locked
+                    </span>
+                    {{/if}}
+                </div>
+                <div class="mt-2 h-px bg-gray-200"></div>
+            </div>
+
+            <!-- Scores List -->
+            <div class="space-y-1">
+                {{#each this}}
+                <div
+                    class="flex items-center gap-4 py-4 px-4 rounded-lg hover:bg-gray-50 transition border-l-4 border-transparent">
+                    <!-- Team Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-3 mb-1">
+                            <h3 class="text-lg font-semibold text-gray-900 truncate">{{this.team_name}}</h3>
+                            <span class="text-xs text-gray-500 flex-shrink-0">{{this.table_name}}</span>
+                        </div>
+                        <div class="flex items-center gap-4 text-xs text-gray-500">
+                            {{#if this.division}}
+                            <span>{{this.division}}</span>
+                            {{/if}}
+                            {{#if this.notes}}
+                            <span class="truncate max-w-md">{{this.notes}}</span>
+                            {{/if}}
+                        </div>
+                    </div>
+
+                    <!-- Score -->
+                    <div class="text-right flex-shrink-0">
+                        <div class="text-2xl font-bold text-gray-900">
+                            {{toFixed this.score 1}}
+                        </div>
+                    </div>
+
+                    <!-- Action -->
+                    <div class="flex-shrink-0">
+                        {{#unless (contains ../../lockedRounds this.round)}}
+                        <a href="/scores/enter/{{encodeURIComponent this.team_name}}?round={{this.round}}"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg transition">
+                            Edit
+                        </a>
+                        {{/unless}}
+                    </div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+        {{/each}}
+
+        {{else}}
+        <!-- No Scores Message -->
+        <div class="text-center py-16">
+            <p class="text-gray-500 text-lg mb-6">
+                You haven't submitted any scores yet.
+            </p>
+            <a href="/scores/select-team"
+                class="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Start Scoring Teams
+            </a>
+        </div>
+        {{/if}}
+    </div>
+</div>

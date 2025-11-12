@@ -1,0 +1,197 @@
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Finalize Judging</h1>
+        <p class="text-gray-600">Lock judging and select winners for each division</p>
+    </div>
+
+    {{#if error}}
+    <div class="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+        <p class="text-red-800 text-sm">{{error}}</p>
+    </div>
+    {{/if}}
+
+    {{#if success}}
+    <div class="mb-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
+        <p class="text-green-800 text-sm">
+            {{#if (eq success 'judging_locked')}}
+            Judging has been locked. No new scores can be entered.
+            {{else if (eq success 'judging_unlocked')}}
+            Judging has been unlocked. Scores can now be entered again.
+            {{else if (eq success 'winners_updated')}}
+            Winners have been updated successfully.
+            {{else}}
+            {{success}}
+            {{/if}}
+        </p>
+    </div>
+    {{/if}}
+
+    <!-- Lock Judging Section -->
+    <div class="mb-12 bg-white border border-gray-200 rounded-lg p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Lock Judging</h2>
+        <p class="text-gray-600 mb-4">
+            {{#if eventSettings.judging_locked}}
+            Judging is currently <strong class="text-red-600">LOCKED</strong>. No new scores can be entered.
+            {{else}}
+            Judging is currently <strong class="text-green-600">UNLOCKED</strong>. Judges can enter scores.
+            {{/if}}
+        </p>
+        <form method="POST" action="/admin/judging/lock" class="inline">
+            <input type="hidden" name="locked" value="{{#if eventSettings.judging_locked}}0{{else}}1{{/if}}">
+            <button type="submit"
+                onclick="return confirm('{{#if eventSettings.judging_locked}}Are you sure you want to unlock judging? This will allow judges to enter scores again.{{else}}Are you sure you want to lock judging? This will prevent all new scores from being entered. Make sure you have selected winners first.{{/if}}')"
+                class="px-6 py-3 {{#if eventSettings.judging_locked}}bg-green-600 hover:bg-green-700{{else}}bg-red-600 hover:bg-red-700{{/if}} text-white rounded-lg font-semibold transition">
+                {{#if eventSettings.judging_locked}}
+                Unlock Judging
+                {{else}}
+                Lock Judging (End Judging)
+                {{/if}}
+            </button>
+        </form>
+    </div>
+
+    <!-- Select Winners Section -->
+    {{#if divisions.length}}
+    <div class="mb-6 bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+        <p class="text-blue-800 text-sm">
+            <strong>Note:</strong> Winners are automatically selected based on average scores (descending). You can
+            override these selections if needed.
+        </p>
+    </div>
+    <form method="POST" action="/admin/judging/winners" class="space-y-8">
+        {{#each divisions}}
+        <div class="bg-white border border-gray-200 rounded-lg p-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">{{this}} Division</h2>
+
+            {{#if (lookup ../divisionTeams this)}}
+            {{#with (lookup ../winners this) as |divisionWinners|}}
+            <div class="space-y-4">
+                <!-- First Place -->
+                <div>
+                    <label for="winner_{{../this}}_1" class="block text-sm font-semibold text-gray-700 mb-2">
+                        1st Place <span class="text-yellow-600">🥇</span>
+                    </label>
+                    <select id="winner_{{../this}}_1" name="winner_{{../this}}_1"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                        <option value="">-- Select 1st Place --</option>
+                        {{#each (lookup ../../divisionTeams ../this)}}
+                        <option value="{{this.id}}" {{#if (and divisionWinners (eq this.id (lookup divisionWinners
+                            0)))}}selected{{/if}}>
+                            {{this.name}} - Avg Score: {{toFixed this.avg_score 2}} ({{this.judge_count}} judges,
+                            {{this.rounds_judged}} rounds)
+                        </option>
+                        {{/each}}
+                    </select>
+                </div>
+
+                <!-- Second Place -->
+                <div>
+                    <label for="winner_{{../this}}_2" class="block text-sm font-semibold text-gray-700 mb-2">
+                        2nd Place <span class="text-gray-400">🥈</span>
+                    </label>
+                    <select id="winner_{{../this}}_2" name="winner_{{../this}}_2"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                        <option value="">-- Select 2nd Place --</option>
+                        {{#each (lookup ../../divisionTeams ../this)}}
+                        <option value="{{this.id}}" {{#if (and divisionWinners (eq this.id (lookup divisionWinners
+                            1)))}}selected{{/if}}>
+                            {{this.name}} - Avg Score: {{toFixed this.avg_score 2}} ({{this.judge_count}} judges,
+                            {{this.rounds_judged}} rounds)
+                        </option>
+                        {{/each}}
+                    </select>
+                </div>
+
+                <!-- Third Place -->
+                <div>
+                    <label for="winner_{{../this}}_3" class="block text-sm font-semibold text-gray-700 mb-2">
+                        3rd Place <span class="text-orange-600">🥉</span>
+                    </label>
+                    <select id="winner_{{../this}}_3" name="winner_{{../this}}_3"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                        <option value="">-- Select 3rd Place --</option>
+                        {{#each (lookup ../../divisionTeams ../this)}}
+                        <option value="{{this.id}}" {{#if (and divisionWinners (eq this.id (lookup divisionWinners
+                            2)))}}selected{{/if}}>
+                            {{this.name}} - Avg Score: {{toFixed this.avg_score 2}} ({{this.judge_count}} judges,
+                            {{this.rounds_judged}} rounds)
+                        </option>
+                        {{/each}}
+                    </select>
+                </div>
+            </div>
+            {{/with}}
+
+            <!-- Team Rankings Table -->
+            <div class="mt-6">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">All Teams (Ranked by Average Score)</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Rank</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Team</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Project</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Avg Score</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Judges</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {{#each (lookup ../divisionTeams this)}}
+                            {{#with (lookup ../../winners ../../this) as |divisionWinners|}}
+                            <tr
+                                class="{{#if (and divisionWinners (eq this.id (lookup divisionWinners 0)))}}bg-yellow-50{{else if (and divisionWinners (eq this.id (lookup divisionWinners 1)))}}bg-gray-50{{else if (and divisionWinners (eq this.id (lookup divisionWinners 2)))}}bg-orange-50{{/if}}">
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {{#if (and divisionWinners (eq this.id (lookup divisionWinners 0)))}}🥇{{else if
+                                    (and divisionWinners (eq this.id (lookup divisionWinners 1)))}}🥈{{else if (and
+                                    divisionWinners (eq this.id (lookup divisionWinners 2)))}}🥉{{else}}{{add @index
+                                    1}}{{/if}}
+                                </td>
+                                {{/with}}
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{this.name}}</td>
+                                <td class="px-4 py-3 text-sm text-gray-600">{{this.project_name}}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{toFixed
+                                    this.avg_score 2}}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{{this.judge_count}}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{{this.rounds_judged}}
+                                </td>
+                            </tr>
+                            {{/each}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {{else}}
+            <p class="text-gray-500">No teams found in this division.</p>
+            {{/if}}
+        </div>
+        {{/each}}
+
+        <div class="flex justify-end gap-4">
+            <a href="/admin"
+                class="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition">
+                Cancel
+            </a>
+            <button type="submit"
+                class="px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                Save Winners
+            </button>
+        </div>
+    </form>
+    {{else}}
+    <div class="bg-white border border-gray-200 rounded-lg p-6">
+        <p class="text-gray-500">No divisions configured. Please configure divisions in <a href="/admin/settings"
+                class="text-blue-600 hover:text-blue-800 underline">Event Settings</a> first.</p>
+    </div>
+    {{/if}}
+</div>

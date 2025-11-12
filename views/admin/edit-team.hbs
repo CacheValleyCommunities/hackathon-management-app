@@ -1,0 +1,135 @@
+<div class="min-h-screen bg-white">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
+        <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Edit Team</h1>
+                    <p class="text-sm text-gray-500 mt-2">{{team.name}}</p>
+                </div>
+                <div class="flex gap-2">
+                    <a href="/participant/team/edit?teamId={{team.id}}" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg transition">
+                        Full Edit
+                    </a>
+                    <a href="/admin" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                        ← Back
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Error Messages -->
+        {{#if error}}
+        <div class="mb-8 bg-red-50 border border-red-200 rounded-lg p-4">
+            <p class="text-red-800 font-medium">{{error}}</p>
+        </div>
+        {{/if}}
+
+        <!-- Form Card -->
+        <div class="border border-gray-200 rounded-lg p-8">
+            <form method="POST" action="/admin/teams/{{team.id}}/update" class="space-y-6">
+                <!-- Team Name -->
+                <div>
+                    <label for="teamName" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Team Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" 
+                           id="teamName" 
+                           name="teamName" 
+                           value="{{team.name}}"
+                           required 
+                           autofocus
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                </div>
+
+                <!-- Table and Division -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Table -->
+                    <div>
+                        <label for="tableName" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Table <span class="text-red-500">*</span>
+                        </label>
+                        <select id="tableName" 
+                                name="tableName" 
+                                required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                            {{#each tables}}
+                            <option value="{{this}}" {{#if (eq this ../team.table_name)}}selected{{/if}}>{{this}}</option>
+                            {{/each}}
+                        </select>
+                    </div>
+
+                    <!-- Division -->
+                    {{#if divisions.length}}
+                    <div>
+                        <label for="division" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Division
+                        </label>
+                        <select id="division" 
+                                name="division" 
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                            <option value="">No Division</option>
+                            {{#each divisions}}
+                            <option value="{{this}}" {{#if (eq this ../team.division)}}selected{{/if}}>{{this}}</option>
+                            {{/each}}
+                        </select>
+                    </div>
+                    {{/if}}
+                </div>
+
+                <!-- Project Name -->
+                <div>
+                    <label for="projectName" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Project Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" 
+                           id="projectName" 
+                           name="projectName" 
+                           value="{{team.project_name}}"
+                           required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                </div>
+
+                <!-- Contact Email -->
+                <div>
+                    <label for="contactEmail" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Contact Email
+                    </label>
+                    <input type="email" 
+                           id="contactEmail" 
+                           name="contactEmail" 
+                           value="{{team.contact_email}}"
+                           placeholder="team@example.com"
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                </div>
+
+                <!-- GitHub Link -->
+                <div>
+                    <label for="githubLink" class="block text-sm font-semibold text-gray-700 mb-2">
+                        GitHub Link
+                    </label>
+                    <input type="url" 
+                           id="githubLink" 
+                           name="githubLink" 
+                           value="{{team.github_link}}"
+                           placeholder="https://github.com/team/project"
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row gap-3 pt-4">
+                    <button type="submit" 
+                            class="flex-1 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                        Update Team
+                    </button>
+                    <a href="/admin" 
+                       class="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 text-center rounded-lg font-semibold transition">
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

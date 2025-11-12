@@ -1,0 +1,148 @@
+<div class="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
+    <div class="max-w-2xl w-full">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            {{#if eventSettings.logo_filename}}
+            <img src="/uploads/{{eventSettings.logo_filename}}" alt="{{eventSettings.event_name}}"
+                class="max-h-20 mx-auto mb-6">
+            {{/if}}
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-2">Accept Policies</h1>
+            <p class="text-sm text-gray-600">Please review and accept our policies to continue</p>
+        </div>
+
+        <!-- Policy Acceptance Card -->
+        <div class="bg-white border border-gray-200 rounded-lg shadow-lg p-8">
+            {{#if error}}
+            <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="text-red-800 font-medium">{{error}}</p>
+            </div>
+            {{/if}}
+            
+            <form method="POST" action="/auth/accept-policies" class="space-y-6">
+                <!-- Age and Guardian Information -->
+                <div class="border-b border-gray-200 pb-6">
+                    <div class="mb-4">
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" id="isUnder18" name="isUnder18" value="1"
+                                class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                onchange="toggleGuardianEmail()">
+                            <div>
+                                <span class="text-sm font-semibold text-gray-700">I am under 18 years of age</span>
+                                <p class="text-xs text-gray-500 mt-1">Guardian email is required for participants under 18</p>
+                            </div>
+                        </label>
+                    </div>
+                    <div id="guardianEmailSection" class="hidden">
+                        <label for="guardianEmail" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Guardian Email <span class="text-red-500">*</span>
+                        </label>
+                        <input type="email" id="guardianEmail" name="guardianEmail"
+                            placeholder="guardian@example.com"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                        <p class="text-xs text-gray-500 mt-2">We will notify your guardian about your participation</p>
+                    </div>
+                </div>
+
+                <!-- Policy Acceptance -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Required Agreements</h3>
+                    
+                    <div class="space-y-3">
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" id="privacyPolicyAccepted" name="privacyPolicyAccepted" value="1" required
+                                class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <div>
+                                <span class="text-sm font-semibold text-gray-700">
+                                    I accept the <a href="/policies/privacy" target="_blank" class="text-blue-600 hover:text-blue-800 underline">Privacy Policy</a>
+                                    <span class="text-red-500">*</span>
+                                </span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" id="termsAccepted" name="termsAccepted" value="1" required
+                                class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <div>
+                                <span class="text-sm font-semibold text-gray-700">
+                                    I accept the <a href="/policies/terms" target="_blank" class="text-blue-600 hover:text-blue-800 underline">Terms of Use</a>
+                                    <span class="text-red-500">*</span>
+                                </span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" id="acceptableUseAccepted" name="acceptableUseAccepted" value="1" required
+                                class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <div>
+                                <span class="text-sm font-semibold text-gray-700">
+                                    I accept the <a href="/policies/acceptable-use" target="_blank" class="text-blue-600 hover:text-blue-800 underline">Acceptable Use Policy</a>
+                                    <span class="text-red-500">*</span>
+                                </span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Email Preferences -->
+                <div class="border-t border-gray-200 pt-6">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" id="emailPreferences" name="emailPreferences" value="1"
+                            class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="text-sm font-semibold text-gray-700">Email Preferences</span>
+                            <p class="text-xs text-gray-500 mt-1">I would like to receive emails about future code-camp events and other code-related content</p>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Data Privacy Notice -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p class="text-xs text-gray-700">
+                        <strong>Data Privacy:</strong> We do not sell your personal data or share it with third parties. 
+                        Your information is used solely for event management and communication purposes. 
+                        See our <a href="/policies/privacy" target="_blank" class="text-blue-600 hover:text-blue-800 underline">Privacy Policy</a> for more details.
+                    </p>
+                </div>
+
+                <!-- Submit Button -->
+                <button type="submit"
+                    class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                    Accept and Continue
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Toggle guardian email field based on age
+    function toggleGuardianEmail() {
+        const isUnder18 = document.getElementById('isUnder18').checked;
+        const guardianSection = document.getElementById('guardianEmailSection');
+        const guardianEmail = document.getElementById('guardianEmail');
+        
+        if (isUnder18) {
+            guardianSection.classList.remove('hidden');
+            guardianEmail.setAttribute('required', 'required');
+        } else {
+            guardianSection.classList.add('hidden');
+            guardianEmail.removeAttribute('required');
+            guardianEmail.value = '';
+        }
+    }
+
+    // Validate form before submission
+    document.querySelector('form').addEventListener('submit', function(e) {
+        const isUnder18 = document.getElementById('isUnder18').checked;
+        const guardianEmail = document.getElementById('guardianEmail').value;
+        
+        if (isUnder18 && !guardianEmail) {
+            e.preventDefault();
+            alert('Guardian email is required for participants under 18 years of age.');
+            document.getElementById('guardianEmailSection').classList.remove('hidden');
+            document.getElementById('guardianEmail').focus();
+            return false;
+        }
+    });
+</script>
+

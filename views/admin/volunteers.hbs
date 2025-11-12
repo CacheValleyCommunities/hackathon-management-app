@@ -1,0 +1,189 @@
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Manage Volunteers</h1>
+        <p class="text-gray-600">Review and manage volunteer applications</p>
+    </div>
+
+    {{#if error}}
+    <div class="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+        <p class="text-red-800 text-sm">{{error}}</p>
+    </div>
+    {{/if}}
+
+    {{#if success}}
+    <div class="mb-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
+        <p class="text-green-800 text-sm">
+            {{#if (eq success 'volunteer_approved')}}
+                Volunteer application approved successfully. The volunteer has been notified via email and a judge account has been created.
+            {{else if (eq success 'volunteer_denied')}}
+                Volunteer application denied. The volunteer has been notified via email.
+            {{else if (eq success 'notes_updated')}}
+                Admin notes updated successfully.
+            {{else}}
+                {{success}}
+            {{/if}}
+        </p>
+    </div>
+    {{/if}}
+
+    <!-- Search Bar -->
+    <div class="mb-6">
+        <form method="GET" action="/admin/volunteers" class="flex gap-4">
+            <input type="text" name="search" value="{{search}}" placeholder="Search by name, email, phone, or company..."
+                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+            {{#if status}}
+            <input type="hidden" name="status" value="{{status}}">
+            {{/if}}
+            <button type="submit"
+                class="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium">
+                Search
+            </button>
+            {{#if search}}
+            <a href="/admin/volunteers{{#if status}}?status={{status}}{{/if}}"
+                class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium">
+                Clear
+            </a>
+            {{/if}}
+        </form>
+    </div>
+
+    <!-- Status Filter Tabs -->
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="-mb-px flex space-x-8">
+            <a href="/admin/volunteers{{#if search}}?search={{search}}{{/if}}"
+                class="py-4 px-1 border-b-2 font-medium text-sm {{#unless status}}border-gray-900 text-gray-900{{else}}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{{/unless}}">
+                All ({{pendingCount}} pending)
+            </a>
+            <a href="/admin/volunteers?status=pending{{#if search}}&search={{search}}{{/if}}"
+                class="py-4 px-1 border-b-2 font-medium text-sm {{#if (eq status 'pending')}}border-gray-900 text-gray-900{{else}}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{{/if}}">
+                Pending ({{pendingCount}})
+            </a>
+            <a href="/admin/volunteers?status=approved{{#if search}}&search={{search}}{{/if}}"
+                class="py-4 px-1 border-b-2 font-medium text-sm {{#if (eq status 'approved')}}border-gray-900 text-gray-900{{else}}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{{/if}}">
+                Approved ({{approvedCount}})
+            </a>
+            <a href="/admin/volunteers?status=denied{{#if search}}&search={{search}}{{/if}}"
+                class="py-4 px-1 border-b-2 font-medium text-sm {{#if (eq status 'denied')}}border-gray-900 text-gray-900{{else}}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{{/if}}">
+                Denied ({{deniedCount}})
+            </a>
+        </nav>
+    </div>
+
+    <!-- Volunteers List -->
+    {{#if volunteers.length}}
+    <div class="space-y-4">
+        {{#each volunteers}}
+        <div class="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-3">
+                        <h3 class="text-lg font-semibold text-gray-900">{{name}}</h3>
+                        <span
+                            class="px-2 py-1 text-xs font-medium rounded {{#if (eq status 'approved')}}bg-green-100 text-green-800{{else if (eq status 'denied')}}bg-red-100 text-red-800{{else}}bg-yellow-100 text-yellow-800{{/if}}">
+                            {{#if (eq status 'approved')}}Approved{{else if (eq status 'denied')}}Denied{{else}}Pending{{/if}}
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">Email</p>
+                            <p class="text-sm text-gray-900"><a href="mailto:{{email}}"
+                                    class="text-blue-600 hover:text-blue-800">{{email}}</a></p>
+                        </div>
+                        {{#if phone}}
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">Phone</p>
+                            <p class="text-sm text-gray-900"><a href="tel:{{phone}}"
+                                    class="text-blue-600 hover:text-blue-800">{{phone}}</a></p>
+                        </div>
+                        {{/if}}
+                        {{#if company}}
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">Company</p>
+                            <p class="text-sm text-gray-900">{{company}}</p>
+                        </div>
+                        {{/if}}
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">Applied</p>
+                            <p class="text-sm text-gray-900">{{formatDate created_at}}</p>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-500 mb-2">Wants to help with:</p>
+                        <div class="flex flex-wrap gap-2">
+                            {{#if help_judging}}
+                            <span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">Judging</span>
+                            {{/if}}
+                            {{#if help_logistics}}
+                            <span class="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded">Logistics</span>
+                            {{/if}}
+                            {{#if help_mentor}}
+                            <span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">Mentoring</span>
+                            {{/if}}
+                        </div>
+                    </div>
+
+                    {{#if description}}
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-500 mb-2">Description:</p>
+                        <p class="text-sm text-gray-900 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg border border-gray-200">{{description}}</p>
+                    </div>
+                    {{/if}}
+
+                    {{#if user_email}}
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-500 mb-1">Linked User Account:</p>
+                        <p class="text-sm text-gray-900 font-medium">{{user_email}} (Judge)</p>
+                    </div>
+                    {{/if}}
+
+                    <!-- Admin Notes -->
+                    <div class="mb-4">
+                        <form method="POST" action="/admin/volunteers/{{id}}/notes" class="space-y-2">
+                            <label for="admin_notes_{{id}}" class="block text-sm text-gray-500 mb-1">Admin Notes:</label>
+                            <textarea id="admin_notes_{{id}}" name="admin_notes" rows="3"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm">{{admin_notes}}</textarea>
+                            <button type="submit"
+                                class="px-4 py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition">
+                                Save Notes
+                            </button>
+                        </form>
+                    </div>
+
+                    {{#if reviewed_at}}
+                    <div class="text-xs text-gray-500">
+                        Reviewed on {{formatDate reviewed_at}} by {{reviewed_by}}
+                    </div>
+                    {{/if}}
+                </div>
+
+                {{#if (eq status 'pending')}}
+                <div class="flex gap-2 ml-4">
+                    <form method="POST" action="/admin/volunteers/{{id}}/status" class="inline">
+                        <input type="hidden" name="status" value="approved">
+                        <button type="submit"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition">
+                            Approve
+                        </button>
+                    </form>
+                    <form method="POST" action="/admin/volunteers/{{id}}/status" class="inline">
+                        <input type="hidden" name="status" value="denied">
+                        <button type="submit"
+                            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition">
+                            Deny
+                        </button>
+                    </form>
+                </div>
+                {{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{else}}
+    <div class="bg-white border border-gray-200 rounded-lg p-12 text-center">
+        <p class="text-gray-500">No volunteers found{{#if status}} with status "{{status}}"{{/if}}{{#if search}} matching "{{search}}"{{/if}}.</p>
+    </div>
+    {{/if}}
+</div>
+

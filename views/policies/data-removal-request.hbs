@@ -1,0 +1,162 @@
+<div class="min-h-screen bg-white">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Data Removal Request</h1>
+                    <p class="text-sm text-gray-500 mt-2">Request deletion of your personal data</p>
+                </div>
+                <a href="/policies/privacy" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                    ← Privacy Policy
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Error Messages -->
+        {{#if error}}
+        <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded">
+            <p class="text-red-800 font-medium">✗ {{error}}</p>
+        </div>
+        {{/if}}
+
+        <!-- Success Messages -->
+        {{#if success}}
+        <div class="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded">
+            <p class="text-green-800 font-medium">✓ {{success}}</p>
+        </div>
+        {{/if}}
+
+        <!-- Information Box -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded mb-8">
+            <p class="text-blue-800 text-sm mb-2">
+                <strong>About Data Removal Requests</strong>
+            </p>
+            <p class="text-blue-700 text-sm">
+                You have the right to request deletion of your personal information. We will process your request within
+                30 days. If you have an account, you can also delete your account directly from your
+                <a href="/account/settings" class="underline font-semibold">account settings</a>. Guardians can request
+                deletion of their child's data using this form.
+            </p>
+        </div>
+
+        <form method="POST" action="/policies/data-removal-request" class="space-y-8">
+            <!-- Requester Information -->
+            <div>
+                <h2 class="text-2xl font-bold text-gray-900 tracking-tight mb-6">Your Information</h2>
+                <div class="space-y-6">
+                    <div>
+                        <label for="requester_name" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Your Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="requester_name" name="requester_name" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition"
+                            placeholder="John Doe">
+                    </div>
+
+                    <div>
+                        <label for="requester_email" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Your Email Address <span class="text-red-500">*</span>
+                        </label>
+                        <input type="email" id="requester_email" name="requester_email" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition"
+                            placeholder="your.email@example.com">
+                        <p class="text-xs text-gray-500 mt-1">We'll send a confirmation to this email</p>
+                    </div>
+
+                    <div>
+                        <label for="requester_relationship" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Your Relationship to the Data Subject
+                        </label>
+                        <select id="requester_relationship" name="requester_relationship"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition">
+                            <option value="Self">Self (I am requesting my own data removal)</option>
+                            <option value="Guardian">Guardian/Parent (Requesting removal of child's data)</option>
+                            <option value="Legal Representative">Legal Representative</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Subject Information -->
+            <div>
+                <h2 class="text-2xl font-bold text-gray-900 tracking-tight mb-6">Data Subject Information</h2>
+                <p class="text-sm text-gray-600 mb-6">
+                    Provide information about the person whose data should be removed. If you're requesting your own data
+                    removal, enter your own information here.
+                </p>
+                <div class="space-y-6">
+                    <div>
+                        <label for="data_subject_email" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Email Address Associated with Account <span class="text-red-500">*</span>
+                        </label>
+                        <input type="email" id="data_subject_email" name="data_subject_email" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition"
+                            placeholder="account.email@example.com">
+                        <p class="text-xs text-gray-500 mt-1">The email address used to register the account</p>
+                    </div>
+
+                    <div>
+                        <label for="data_subject_name" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Name (if known)
+                        </label>
+                        <input type="text" id="data_subject_name" name="data_subject_name"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition"
+                            placeholder="Name of the person">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Request Details -->
+            <div>
+                <h2 class="text-2xl font-bold text-gray-900 tracking-tight mb-6">Request Details</h2>
+                <div class="space-y-6">
+                    <div>
+                        <label for="reason" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Reason for Removal (Optional)
+                        </label>
+                        <textarea id="reason" name="reason" rows="4"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition"
+                            placeholder="Please provide any additional context about why you're requesting data removal..."></textarea>
+                    </div>
+
+                    <div>
+                        <label for="additional_info" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Additional Information (Optional)
+                        </label>
+                        <textarea id="additional_info" name="additional_info" rows="4"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition"
+                            placeholder="Any other information that might help us process your request..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Warning -->
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="text-red-800 text-sm font-semibold mb-2">Important Information</p>
+                <ul class="text-red-700 text-sm space-y-1 list-disc list-inside">
+                    <li>Data removal requests are processed within 30 days</li>
+                    <li>Some data may be retained if required by law or for legal protection</li>
+                    <li>Event data (scores, team registrations) may be retained for historical records</li>
+                    <li>You will receive a confirmation email once your request is processed</li>
+                </ul>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200">
+                <button type="submit"
+                    class="flex-1 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                    Submit Data Removal Request
+                </button>
+                <a href="/policies/privacy"
+                    class="flex-1 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 text-center rounded-lg font-semibold transition flex items-center justify-center">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+

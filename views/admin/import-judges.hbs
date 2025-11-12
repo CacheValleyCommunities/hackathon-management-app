@@ -1,0 +1,93 @@
+<div class="min-h-screen bg-white">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Import Judges from CSV</h1>
+                    <p class="text-sm text-gray-500 mt-2">Upload a CSV file and map fields to import multiple judges at
+                        once</p>
+                </div>
+                <a href="/admin/judges/add"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                    ← Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Error Messages -->
+        {{#if error}}
+        <div class="mb-8 bg-red-50 border border-red-200 rounded-lg p-4">
+            <p class="text-red-800 font-medium">{{error}}</p>
+        </div>
+        {{/if}}
+
+        <!-- Upload Form -->
+        <div class="border border-gray-200 rounded-lg p-8 mb-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-6">Upload CSV File</h2>
+            <form method="POST" action="/admin/judges/import/upload" enctype="multipart/form-data" class="space-y-6">
+                <!-- File Upload -->
+                <div>
+                    <label for="csvFile" class="block text-sm font-semibold text-gray-700 mb-2">
+                        CSV File <span class="text-red-500">*</span>
+                    </label>
+                    <div
+                        class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition">
+                        <div class="space-y-1 text-center">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none"
+                                viewBox="0 0 48 48">
+                                <path
+                                    d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <div class="flex text-sm text-gray-600">
+                                <label for="csvFile"
+                                    class="relative cursor-pointer bg-white rounded-md font-medium text-gray-900 hover:text-gray-800 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-gray-900">
+                                    <span>Upload a file</span>
+                                    <input id="csvFile" name="csvFile" type="file" accept=".csv" required
+                                        class="sr-only">
+                                </label>
+                                <p class="pl-1">or drag and drop</p>
+                            </div>
+                            <p class="text-xs text-gray-500">CSV files only, max 5MB</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 class="text-sm font-semibold text-blue-900 mb-2">CSV Format Requirements:</h3>
+                    <ul class="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                        <li>First row should contain column headers</li>
+                        <li>Must include columns for <strong>Email</strong> and <strong>Name</strong></li>
+                        <li>Optional: Role column (defaults to "judge" if not provided)</li>
+                        <li>Email addresses must be valid format</li>
+                    </ul>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="flex gap-4">
+                    <button type="submit"
+                        class="flex-1 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                        Upload and Map Fields
+                    </button>
+                    <a href="/admin"
+                        class="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-semibold transition">
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Example CSV -->
+        <div class="border border-gray-200 rounded-lg p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-6">Example CSV Format</h2>
+            <pre class="bg-gray-50 p-4 rounded-lg text-sm overflow-x-auto border border-gray-200"><code>Email,Name,Role
+judge1@example.com,Alice Johnson,judge
+judge2@example.com,Bob Smith,judge
+judge3@example.com,Carol Martinez,admin</code></pre>
+        </div>
+    </div>
+</div>

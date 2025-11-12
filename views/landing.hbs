@@ -1,0 +1,212 @@
+<div class="min-h-screen bg-white">
+    <!-- Hero Section with Overlay -->
+    {{#if eventSettings.hero_banner_image}}
+    <div class="relative w-full h-[55vh] min-h-[350px] max-h-[550px] overflow-hidden bg-gray-100">
+        {{#if eventSettings.hero_banner_link}}
+        <a href="{{eventSettings.hero_banner_link}}" target="_blank" rel="noopener noreferrer" class="block h-full">
+            {{/if}}
+            <img src="/uploads/{{eventSettings.hero_banner_image}}" alt="{{eventSettings.event_name}}"
+                class="w-full h-full object-cover">
+            {{#if eventSettings.hero_banner_link}}
+        </a>
+        {{/if}}
+
+        <!-- Overlay for better text readability -->
+        <div class="absolute inset-0 bg-black/30"></div>
+
+        <!-- Event Name and Dates Overlay -->
+        <div class="absolute inset-0 flex items-center justify-center">
+            <div class="text-center px-4 sm:px-6 lg:px-8 max-w-4xl">
+                <h1
+                    class="text-5xl sm:text-6xl lg:text-7xl font-bold text-white mb-5 tracking-tight leading-[1.1] drop-shadow-lg">
+                    {{eventSettings.event_name}}
+                </h1>
+                {{#if eventSettings.event_dates_text}}
+                <p class="text-xl sm:text-2xl text-white font-normal drop-shadow-md">
+                    {{eventSettings.event_dates_text}}
+                </p>
+                {{else if eventSettings.start_date}}
+                <p class="text-xl sm:text-2xl text-white font-normal drop-shadow-md">
+                    {{eventSettings.start_date}}{{#if eventSettings.end_date}} — {{eventSettings.end_date}}{{/if}}
+                </p>
+                {{/if}}
+            </div>
+        </div>
+    </div>
+    {{else}}
+    <!-- Header Section (when no hero banner) -->
+    <header class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-10">
+        <h1
+            class="text-5xl sm:text-6xl lg:text-7xl font-bold text-gray-900 mb-5 tracking-tight leading-[1.1] text-center">
+            {{eventSettings.event_name}}
+        </h1>
+        {{#if eventSettings.event_dates_text}}
+        <p class="text-xl sm:text-2xl text-gray-500 font-normal text-center">
+            {{eventSettings.event_dates_text}}
+        </p>
+        {{else if eventSettings.start_date}}
+        <p class="text-xl sm:text-2xl text-gray-500 font-normal text-center">
+            {{eventSettings.start_date}}{{#if eventSettings.end_date}} — {{eventSettings.end_date}}{{/if}}
+        </p>
+        {{/if}}
+    </header>
+    {{/if}}
+
+    <!-- Main Content -->
+    <article
+        class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 {{#if eventSettings.hero_banner_image}}pt-12 pb-20{{else}}pt-0 pb-20{{/if}}">
+        <!-- Landing Page Content -->
+        {{#if eventSettings.landing_page_content}}
+        <div class="prose prose-lg max-w-none">
+            <div class="text-gray-800 leading-relaxed whitespace-pre-line"
+                style="font-size: 21px; line-height: 1.58; letter-spacing: -0.003em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                {{eventSettings.landing_page_content}}
+            </div>
+        </div>
+        {{else}}
+        <!-- Default Content -->
+        <div class="text-gray-800"
+            style="font-size: 21px; line-height: 1.58; letter-spacing: -0.003em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <p class="mb-10 text-gray-900" style="font-size: 22px; line-height: 1.65; font-weight: 400;">
+                Code Camp is a programming, design and entrepreneurship contest all rolled up into a ridiculously
+                compressed 24-hour event. It's crazy fun! Teams ranging in size from one to four participants compete
+                against other teams to build the best web or mobile app.
+            </p>
+
+            <h2 class="text-gray-900 mb-5 mt-20"
+                style="font-size: 42px; line-height: 1.04; letter-spacing: -0.02em; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Divisions</h2>
+            <p class="mb-12 text-gray-700">
+                Code Camp features multiple divisions. The division your team competes in is dependent on the individual
+                with the highest level of experience. For example, if your team of four people is a Novice, two
+                Collegiate, and one Industry (professional), then your team competes in the Industry Division.
+            </p>
+
+            <div class="space-y-12 my-16">
+                <div class="border-l-2 border-gray-200 pl-8">
+                    <h3 class="text-gray-900 mb-4"
+                        style="font-size: 32px; line-height: 1.12; letter-spacing: -0.018em; font-weight: 700;">Industry
+                    </h3>
+                    <p class="text-gray-700 leading-relaxed">
+                        Industry teams include at least ONE professional. A professional is someone that either is
+                        currently working full-time as a programmer, designer, project manager; someone who has been
+                        paid for their development work, or has been an intern (paid or unpaid) for more than two years.
+                        Teams in this Division are developing company ideas, side projects to test concepts or simply to
+                        just claim bragging rights.
+                    </p>
+                </div>
+
+                <div class="border-l-2 border-gray-200 pl-8">
+                    <h3 class="text-gray-900 mb-4"
+                        style="font-size: 32px; line-height: 1.12; letter-spacing: -0.018em; font-weight: 700;">
+                        Intermediate</h3>
+                    <p class="text-gray-700 leading-relaxed">
+                        Intermediate participants have experience in the industry but have not worked professionally
+                        (paid for work). Teams in this Division are looking to improve their software development skills
+                        and impress potential employers. Intermediate participants are typically late stage high-school
+                        students, college students, or someone of an equal experience level.
+                    </p>
+                </div>
+
+                <div class="border-l-2 border-gray-200 pl-8">
+                    <h3 class="text-gray-900 mb-4"
+                        style="font-size: 32px; line-height: 1.12; letter-spacing: -0.018em; font-weight: 700;">Novice
+                    </h3>
+                    <p class="text-gray-700 leading-relaxed">
+                        Novice teams are made up of participants with some experience in the industry or looking to
+                        learn new skills and techniques. Novices have some programming or coding experience. Novices are
+                        participants with some programming experience (high-school students, first-year college
+                        students, or someone with little to no background in programming or software development).
+                    </p>
+                </div>
+
+                <div class="border-l-2 border-gray-200 pl-8">
+                    <h3 class="text-gray-900 mb-4"
+                        style="font-size: 32px; line-height: 1.12; letter-spacing: -0.018em; font-weight: 700;">Day Camp
+                    </h3>
+                    <p class="text-gray-700 leading-relaxed">
+                        This Division is similar to the Novice Division with one change. This group is not participating
+                        for the full 24 hours. Their competition runs from 8:00 AM – 3:00 PM on Friday only.
+                    </p>
+                </div>
+            </div>
+
+            <div class="my-12 p-6 bg-gray-50 rounded-lg border-l-4 border-gray-300">
+                <p class="text-gray-700 italic leading-relaxed">
+                    We will meet with each team prior to the start of the competition to help determine which division
+                    is most applicable for your team. See the rules for more details.
+                </p>
+            </div>
+
+            <h2 class="text-gray-900 mb-5 mt-20"
+                style="font-size: 42px; line-height: 1.04; letter-spacing: -0.02em; font-weight: 700;">When is Code
+                Camp?</h2>
+            <p class="mb-12 text-gray-700 leading-relaxed">
+                Code Camp is generally held the second Friday through Saturday in November. {{#if
+                eventSettings.start_date}}This year's event: {{eventSettings.start_date}}{{#if eventSettings.end_date}}
+                — {{eventSettings.end_date}}{{/if}}{{/if}}
+            </p>
+
+            <h2 class="text-gray-900 mb-5 mt-20"
+                style="font-size: 42px; line-height: 1.04; letter-spacing: -0.02em; font-weight: 700;">Who is Code Camp
+                For?</h2>
+            <p class="mb-12 text-gray-700 leading-relaxed">
+                You! If you are (or are aspiring to be) a programmer, designer, entrepreneur, project manager,
+                mentor/advisor, investor, or Leeroy Jenkins, Code Camp will provide you with tremendous opportunities.
+            </p>
+
+            <h2 class="text-gray-900 mb-5 mt-20"
+                style="font-size: 42px; line-height: 1.04; letter-spacing: -0.02em; font-weight: 700;">Why Should I
+                Participate?</h2>
+            <p class="mb-6 text-gray-700 leading-relaxed">
+                Aside from getting a rad Code Camp t-shirt, you'll have perhaps the best opportunity of the year to
+                bring your skill-set to new heights. There is nothing as exhilarating (and perhaps humbling) as trying
+                to build something meaningful (e.g. and something that works) in just a 24-hour window.
+            </p>
+            <p class="mb-12 text-gray-700 leading-relaxed">
+                Past years' participants have deepened relationships with colleagues, found jobs or business partners,
+                launched successful businesses, formed new friends, built new networks, and made lasting memories. If
+                this sounds too good to be true, we dare you to come participate and prove us wrong 😉
+            </p>
+
+            <h2 class="text-gray-900 mb-5 mt-20"
+                style="font-size: 42px; line-height: 1.04; letter-spacing: -0.02em; font-weight: 700;">How Did Code Camp
+                Originate?</h2>
+            <p class="mb-12 text-gray-700 leading-relaxed">
+                The first code camp was in 2010. The idea was originally conceived by Jerry Brown of OveractDev and Jill
+                Elliss of USTAR at the Business Resource Center. Since then, an active board of volunteers has evolved
+                Code Camp into a highly-anticipated, sponsor-funded event that is gaining both popularity and
+                recognition across the region. Code Camp wouldn't be possible if it wasn't for our generous sponsors and
+                dedicated organizers.
+            </p>
+        </div>
+        {{/if}}
+
+        <!-- Call to Action Section -->
+        <div class="mt-24 pt-16 border-t border-gray-200">
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="/projects"
+                    class="inline-flex items-center justify-center px-8 py-4 border-2 border-gray-900 rounded-full text-gray-900 hover:bg-gray-900 hover:text-white transition-all duration-200 font-semibold text-lg">
+                    View Projects
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </a>
+                <a href="/register"
+                    class="inline-flex items-center justify-center px-8 py-4 bg-gray-900 text-white rounded-full hover:bg-gray-800 transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl">
+                    Register Team
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </a>
+                <a href="/volunteers/signup"
+                    class="inline-flex items-center justify-center px-8 py-4 border-2 border-gray-900 rounded-full text-gray-900 hover:bg-gray-900 hover:text-white transition-all duration-200 font-semibold text-lg">
+                    Volunteer
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </article>
+</div>

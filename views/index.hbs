@@ -1,0 +1,91 @@
+<div class="min-h-screen bg-white">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Admin Link -->
+        {{#if (eq user.role 'admin')}}
+        <div class="mb-8">
+            <a href="/admin" class="text-sm text-gray-600 hover:text-gray-900 font-medium transition">
+                Admin Dashboard →
+            </a>
+        </div>
+        {{/if}}
+
+        <!-- Quick Actions (Judges & Admins) -->
+        {{#if (or (eq user.role 'judge') (eq user.role 'admin'))}}
+        <div class="mb-12 pb-8 border-b border-gray-200">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">Quick Actions</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <a href="/scores/judge-queue"
+                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Judge Queue</h3>
+                    <p class="text-sm text-gray-600">Get auto-assigned to your next table</p>
+                </a>
+
+                <a href="/scores/select-team?round={{currentRound}}"
+                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Enter Scores</h3>
+                    <p class="text-sm text-gray-600">Manually select a team and score</p>
+                </a>
+
+                <a href="/scores/my-scores"
+                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">My Scores</h3>
+                    <p class="text-sm text-gray-600">View and edit your submitted scores</p>
+                </a>
+
+                <a href="/scores/results?round={{currentRound}}"
+                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Leaderboard</h3>
+                    <p class="text-sm text-gray-600">View live scores and rankings</p>
+                </a>
+            </div>
+        </div>
+        {{/if}}
+
+        <!-- Table Map -->
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">Event Floor Map</h2>
+            <div class="border border-gray-200 rounded-lg p-6">
+                <!-- Table Grid -->
+                <div class="overflow-x-auto -mx-6 px-6">
+                    <div class="inline-block min-w-full">
+                        <table class="mx-auto border-collapse" style="table-layout: fixed;">
+                            <tbody>
+                                {{#each gridRows}}
+                                <tr>
+                                    {{#each this}}
+                                    <td class="border border-gray-300 text-center relative group {{#if team}}bg-gray-900 text-white font-bold{{else}}bg-gray-50 text-gray-400{{/if}}"
+                                        style="width: 40px; height: 40px; min-width: 40px; font-size: 10px;">
+                                        <div class="text-[10px] sm:text-xs font-bold mb-0.5 leading-tight">{{id}}</div>
+                                        {{#if team}}
+                                        <div class="text-[8px] sm:text-[9px] leading-tight truncate px-0.5 sm:px-1"
+                                            title="{{team.name}}">
+                                            {{team.name}}
+                                        </div>
+                                        {{/if}}
+                                    </td>
+                                    {{/each}}
+                                </tr>
+                                {{/each}}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 text-white font-bold text-center py-6 rounded-lg mt-6 text-xl">
+                    STAGE
+                </div>
+
+                <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-8 text-sm">
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 bg-gray-900 border border-gray-300 rounded flex-shrink-0"></div>
+                        <span class="text-gray-700 font-medium">Occupied</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 bg-gray-50 border border-gray-300 rounded flex-shrink-0"></div>
+                        <span class="text-gray-700 font-medium">Available</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

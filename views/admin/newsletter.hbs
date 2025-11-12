@@ -1,0 +1,253 @@
+<div class="min-h-screen bg-white">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <!-- Header -->
+        <div class="mb-12 text-center">
+            <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold text-gray-900 mb-5 tracking-tight leading-[1.1]"
+                style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Send Newsletter
+            </h1>
+            <p class="text-xl text-gray-500"
+                style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Compose and send a newsletter to selected user groups. Markdown formatting is supported.
+            </p>
+        </div>
+
+        <!-- Success/Error Messages -->
+        {{#if success}}
+        <div class="mb-12 p-6 bg-green-50 rounded-lg border-l-4 border-green-500">
+            <p class="text-green-800"
+                style="font-size: 16px; line-height: 1.58; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                {{success}}</p>
+        </div>
+        {{/if}}
+
+        {{#if error}}
+        <div class="mb-12 p-6 bg-red-50 rounded-lg border-l-4 border-red-500">
+            <p class="text-red-800"
+                style="font-size: 16px; line-height: 1.58; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                {{error}}</p>
+        </div>
+        {{/if}}
+
+        {{#if sendResult}}
+        <div class="mb-12 p-6 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+            <p class="text-blue-800 mb-3"
+                style="font-size: 18px; line-height: 1.4; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Send Results:</p>
+            <ul class="text-blue-700 space-y-2"
+                style="font-size: 16px; line-height: 1.58; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <li>Total recipients: {{sendResult.total}}</li>
+                <li>Successfully sent: {{sendResult.sent}}</li>
+                {{#if sendResult.failed}}
+                <li class="text-red-700">Failed: {{sendResult.failed}}</li>
+                {{/if}}
+            </ul>
+            {{#if sendResult.errors.length}}
+            <details class="mt-4">
+                <summary class="text-blue-800 cursor-pointer"
+                    style="font-size: 16px; line-height: 1.58; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    View failed emails</summary>
+                <ul class="mt-3 text-blue-700 space-y-2"
+                    style="font-size: 14px; line-height: 1.5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    {{#each sendResult.errors}}
+                    <li>{{this.email}}: {{this.error}}</li>
+                    {{/each}}
+                </ul>
+            </details>
+            {{/if}}
+        </div>
+        {{/if}}
+
+        <!-- Newsletter Form -->
+        <form action="/admin/newsletter/send" method="POST" class="space-y-12"
+            style="font-size: 21px; line-height: 1.58; letter-spacing: -0.003em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <!-- Subject -->
+            <div>
+                <label for="subject" class="block mb-3 text-gray-900"
+                    style="font-size: 18px; line-height: 1.4; font-weight: 600;">
+                    Subject <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="subject" name="subject" value="{{#if subject}}{{subject}}{{/if}}" required
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"
+                    style="font-size: 21px; line-height: 1.58; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;"
+                    placeholder="Newsletter Subject">
+                <p class="mt-3 text-gray-600" style="font-size: 16px; line-height: 1.5;">
+                    You can use personalization tokens: <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded">\{{first}}</code>,
+                    <code class="bg-gray-100 px-1.5 py-0.5 rounded">\{{last}}</code>, <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded">\{{email}}</code>
+                </p>
+            </div>
+
+            <!-- Recipients -->
+            <div>
+                <label class="block mb-5 text-gray-900" style="font-size: 18px; line-height: 1.4; font-weight: 600;">
+                    Recipients <span class="text-red-500">*</span>
+                </label>
+                <div class="space-y-4">
+                    <label
+                        class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                        <input type="checkbox" name="recipients" value="participants" {{#if (contains
+                            recipients "participants" )}}checked{{/if}}
+                            class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-gray-900">
+                        <div class="flex-1">
+                            <span class="text-gray-900"
+                                style="font-size: 18px; line-height: 1.4; font-weight: 500;">Participants</span>
+                            <span class="text-gray-500 ml-2"
+                                style="font-size: 16px; line-height: 1.5;">({{userCounts.participants}} users)</span>
+                        </div>
+                    </label>
+
+                    <label
+                        class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                        <input type="checkbox" name="recipients" value="judges" {{#if (contains recipients "judges"
+                            )}}checked{{/if}} class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-gray-900">
+                        <div class="flex-1">
+                            <span class="text-gray-900"
+                                style="font-size: 18px; line-height: 1.4; font-weight: 500;">Judges</span>
+                            <span class="text-gray-500 ml-2"
+                                style="font-size: 16px; line-height: 1.5;">({{userCounts.judges}} users)</span>
+                        </div>
+                    </label>
+
+                    <label
+                        class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                        <input type="checkbox" name="recipients" value="admins" {{#if (contains recipients "admins"
+                            )}}checked{{/if}} class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-gray-900">
+                        <div class="flex-1">
+                            <span class="text-gray-900"
+                                style="font-size: 18px; line-height: 1.4; font-weight: 500;">Admins</span>
+                            <span class="text-gray-500 ml-2"
+                                style="font-size: 16px; line-height: 1.5;">({{userCounts.admins}} users)</span>
+                        </div>
+                    </label>
+
+                    <label
+                        class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                        <input type="checkbox" name="recipients" value="volunteers" {{#if (contains
+                            recipients "volunteers" )}}checked{{/if}}
+                            class="w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-gray-900">
+                        <div class="flex-1">
+                            <span class="text-gray-900"
+                                style="font-size: 18px; line-height: 1.4; font-weight: 500;">Volunteers
+                                (Approved)</span>
+                            <span class="text-gray-500 ml-2"
+                                style="font-size: 16px; line-height: 1.5;">({{userCounts.volunteers}} users)</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div>
+                <label for="content" class="block mb-3 text-gray-900"
+                    style="font-size: 18px; line-height: 1.4; font-weight: 600;">
+                    Content (Markdown) <span class="text-red-500">*</span>
+                </label>
+                <textarea id="content" name="content" required rows="15"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition font-mono"
+                    style="font-size: 16px; line-height: 1.5; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;"
+                    placeholder="# Newsletter Title
+
+Write your newsletter content here using **Markdown** formatting.
+
+- Bullet points
+- Lists
+- **Bold text**
+- *Italic text*
+
+[Links](https://example.com) work too!">{{#if content}}{{content}}{{/if}}</textarea>
+                <p class="mt-4 text-gray-600" style="font-size: 16px; line-height: 1.5;">
+                    Markdown is supported. Use **bold**, *italic*, links, lists, and more. The content will be
+                    rendered as HTML in the email.
+                </p>
+                <p class="mt-3 text-gray-600" style="font-size: 16px; line-height: 1.5;">
+                    <strong>Personalization tokens:</strong> Use <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded">\{{first}}</code>, <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded">\{{last}}</code>, <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded">\{{email}}</code>, or <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded">\{{url}}</code> to personalize each email.
+                </p>
+            </div>
+
+            <!-- Preview Note -->
+            <div class="p-6 bg-gray-50 rounded-lg border-l-4 border-gray-300">
+                <p class="text-gray-700" style="font-size: 16px; line-height: 1.58;">
+                    <strong>Note:</strong> The newsletter will be sent immediately after you confirm.
+                    Make sure to review your content carefully before sending.
+                </p>
+            </div>
+
+            <!-- Confirmation Checkbox -->
+            <div class="p-6 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
+                <label class="flex items-start gap-4 cursor-pointer">
+                    <input type="checkbox" id="confirmSend" name="confirmSend" value="true" required
+                        class="mt-1 w-5 h-5 text-gray-900 border-gray-300 rounded focus:ring-gray-900">
+                    <div>
+                        <p class="text-gray-900 mb-2" style="font-size: 18px; line-height: 1.4; font-weight: 600;">I
+                            confirm that I want to send this newsletter</p>
+                        <p class="text-gray-700" style="font-size: 16px; line-height: 1.58;">By checking this box, you
+                            confirm that you have reviewed
+                            the content and want to send it to all selected recipients.</p>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Submit Buttons -->
+            <div class="flex flex-col sm:flex-row gap-4 pt-8 border-t border-gray-200">
+                <button type="submit" id="sendButton"
+                    class="inline-flex items-center justify-center px-8 py-4 bg-gray-900 text-white rounded-full hover:bg-gray-800 transition font-semibold text-lg shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                    style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    <span id="sendButtonText">Send Newsletter</span>
+                </button>
+                <a href="/admin"
+                    class="inline-flex items-center justify-center px-8 py-4 border-2 border-gray-900 rounded-full text-gray-900 hover:bg-gray-900 hover:text-white transition font-semibold text-lg"
+                    style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Prevent duplicate form submissions
+    (function () {
+        const form = document.querySelector('form[action="/admin/newsletter/send"]');
+        const sendButton = document.getElementById('sendButton');
+        const sendButtonText = document.getElementById('sendButtonText');
+        let isSubmitting = false;
+
+        if (form && sendButton) {
+            form.addEventListener('submit', function (e) {
+                if (isSubmitting) {
+                    e.preventDefault();
+                    return false;
+                }
+
+                // Check if confirmation checkbox is checked
+                const confirmCheckbox = document.getElementById('confirmSend');
+                if (!confirmCheckbox || !confirmCheckbox.checked) {
+                    e.preventDefault();
+                    alert('Please confirm that you want to send the newsletter by checking the confirmation box.');
+                    return false;
+                }
+
+                // Disable button and show sending state
+                isSubmitting = true;
+                sendButton.disabled = true;
+                sendButtonText.textContent = 'Sending...';
+                sendButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+                // Prevent further submissions
+                return true;
+            });
+
+            // Also disable on double-click
+            sendButton.addEventListener('dblclick', function (e) {
+                e.preventDefault();
+                return false;
+            });
+        }
+    })();
+</script>

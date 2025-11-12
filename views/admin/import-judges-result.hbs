@@ -1,0 +1,90 @@
+<div class="min-h-screen bg-white">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Import Results</h1>
+                    <p class="text-sm text-gray-500 mt-2">CSV import processing complete</p>
+                </div>
+                <a href="/admin"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                    ← Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Summary Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <div class="border border-gray-200 rounded-lg p-6">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Total Rows</h3>
+                <p class="text-4xl font-bold text-gray-900">{{total}}</p>
+            </div>
+            
+            <div class="border border-gray-200 rounded-lg p-6">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Imported</h3>
+                <p class="text-4xl font-bold text-green-700">{{imported}}</p>
+            </div>
+            
+            <div class="border border-gray-200 rounded-lg p-6">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Skipped</h3>
+                <p class="text-4xl font-bold text-orange-700">{{skipped}}</p>
+            </div>
+        </div>
+
+        <!-- Success Message -->
+        {{#if (gt imported 0)}}
+        <div class="mb-8 bg-green-50 border border-green-200 rounded-lg p-6">
+            <div class="flex items-start gap-4">
+                <svg class="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div>
+                    <h3 class="text-lg font-semibold text-green-900 mb-2">Import Successful!</h3>
+                    <p class="text-green-800">
+                        Successfully imported <strong>{{imported}}</strong> judge{{#if (gt imported 1)}}s{{/if}}.
+                        {{#if (gt skipped 0)}}
+                        <strong>{{skipped}}</strong> row{{#if (gt skipped 1)}}s were{{else}} was{{/if}} skipped.
+                        {{/if}}
+                    </p>
+                    <p class="text-green-700 text-sm mt-2">
+                        Confirmation emails have been sent to all newly imported judges.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {{/if}}
+
+        <!-- Errors -->
+        {{#if (gt errors.length 0)}}
+        <div class="mb-8 border border-gray-200 rounded-lg overflow-hidden">
+            <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-900">Errors (First 20)</h2>
+            </div>
+            <div class="p-6">
+                <div class="space-y-3 max-h-96 overflow-y-auto">
+                    {{#each errors}}
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <p class="text-sm text-red-800">{{this}}</p>
+                    </div>
+                    {{/each}}
+                </div>
+            </div>
+        </div>
+        {{/if}}
+
+        <!-- Action Buttons -->
+        <div class="flex gap-4">
+            <a href="/admin/judges/import" 
+               class="flex-1 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition text-center">
+                Import Another CSV
+            </a>
+            <a href="/admin" 
+               class="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-semibold transition">
+                Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>

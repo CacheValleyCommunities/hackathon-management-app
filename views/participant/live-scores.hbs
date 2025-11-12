@@ -1,0 +1,136 @@
+<div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+                <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 break-words">Live Scores - {{team.name}}</h1>
+                <a href="/participant" class="w-full sm:w-auto px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition font-medium text-center min-h-[44px] flex items-center justify-center whitespace-nowrap">
+                    ← Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Round Selector -->
+        <div class="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6 sm:mb-8">
+            <form action="/participant/scores" method="GET" class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                <label for="round" class="font-semibold text-gray-700">Round:</label>
+                <select id="round" 
+                        name="round" 
+                        onchange="this.form.submit()" 
+                        class="flex-1 max-w-xs px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                    {{#each (range 1 10)}}
+                    <option value="{{this}}" {{#if (eq this ../currentRound)}}selected{{/if}}>Round {{this}}</option>
+                    {{/each}}
+                </select>
+            </form>
+        </div>
+
+        {{#if (eq (size scoresByRound) 0)}}
+        <!-- Empty State -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-lg">
+            <div class="flex items-center">
+                <svg class="w-6 h-6 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <p class="text-blue-800 font-medium">No scores available yet. Judges will start scoring soon!</p>
+            </div>
+        </div>
+        {{else}}
+        <!-- Scores by Round -->
+        {{#each scoresByRound}}
+        <div class="mb-8">
+            <!-- Round Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-xl p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+                <h3 class="text-lg sm:text-xl lg:text-2xl font-bold">Round {{@key}}</h3>
+                {{#if (lookup ../roundAverages @key)}}
+                <div class="text-right">
+                    <div class="text-sm text-blue-100">Average Score</div>
+                    <div class="text-4xl font-bold">
+                        {{toFixed (lookup ../roundAverages @key) 2}}
+                    </div>
+                </div>
+                {{/if}}
+            </div>
+            
+            <!-- Scores Grid -->
+            <div class="bg-white rounded-b-xl shadow-lg p-6 space-y-4">
+                {{#each this}}
+                <div class="bg-gradient-to-r from-gray-50 to-gray-100 p-6 rounded-lg border-l-4 border-blue-600">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <div class="font-semibold text-gray-900 mb-2">Judge: {{this.judge_email}}</div>
+                            <div class="text-4xl font-bold text-blue-600">
+                                {{this.score}}
+                            </div>
+                        </div>
+                    </div>
+                    {{#if this.notes}}
+                    <p class="text-gray-600 text-sm mt-3 p-3 bg-white rounded-lg">{{this.notes}}</p>
+                    {{/if}}
+                    <div class="text-xs text-gray-400 mt-3">
+                        Submitted: {{this.created_at}}
+                    </div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+        {{/each}}
+        {{/if}}
+
+        <!-- Division Leaderboard -->
+        {{#if divisionResults.length}}
+        <div class="mt-8 bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4">
+                <h3 class="text-lg sm:text-xl lg:text-2xl font-bold text-white">{{teamDivision}} Division - Round {{currentRound}} Leaderboard</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100 border-b border-gray-200">
+                        <tr class="h-12">
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Rank</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Team</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Table</th>
+                            <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total Score</th>
+                            <th class="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Rounds</th>
+                            <th class="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Judges</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {{#each divisionResults}}
+                        <tr class="h-12 hover:bg-gray-50 transition
+                            {{#if (eq team_name ../../team.name)}}bg-gradient-to-r from-yellow-50 to-yellow-100
+                            {{else if (eq rank 1)}}bg-gradient-to-r from-yellow-50 to-yellow-100
+                            {{else if (eq rank 2)}}bg-gradient-to-r from-gray-50 to-gray-100
+                            {{else if (eq rank 3)}}bg-gradient-to-r from-orange-50 to-orange-100
+                            {{/if}}">
+                            <td class="px-6 py-3 text-center">
+                                {{#if (eq rank 1)}}<span class="text-2xl">🥇</span>
+                                {{else if (eq rank 2)}}<span class="text-2xl">🥈</span>
+                                {{else if (eq rank 3)}}<span class="text-2xl">🥉</span>
+                                {{else}}<span class="font-bold text-gray-700">{{rank}}</span>{{/if}}
+                            </td>
+                            <td class="px-6 py-3 {{#if (eq team_name ../../team.name)}}font-bold{{else}}font-semibold{{/if}} text-gray-900">
+                                {{team_name}}{{#if (eq team_name ../../team.name)}} <span class="text-blue-600">(You)</span>{{/if}}
+                            </td>
+                            <td class="px-6 py-3 text-xs text-gray-600">{{table_name}}</td>
+                            <td class="px-6 py-3 text-right font-bold
+                                {{#if (eq rank 1)}}text-yellow-600
+                                {{else if (eq rank 2)}}text-gray-600
+                                {{else if (eq rank 3)}}text-orange-600
+                                {{else}}text-blue-600{{/if}}">
+                                {{toFixed total_score 2}}
+                            </td>
+                            <td class="px-6 py-3 text-center text-xs text-gray-600">{{rounds_completed}}</td>
+                            <td class="px-6 py-3 text-center text-xs text-gray-600">{{judge_count}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {{/if}}
+    </div>
+</div>

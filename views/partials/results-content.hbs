@@ -1,0 +1,62 @@
+{{#if (eq (size results) 0)}}
+<div class="text-center py-16">
+    <p class="text-gray-500 text-lg">No results available yet. Scores need to be submitted first.</p>
+</div>
+{{else}}
+{{#each results}}
+<div class="mb-6">
+    <!-- Division Header -->
+    <div class="mb-2">
+        <h2 class="text-base font-bold text-gray-900">{{@key}}</h2>
+        <div class="mt-0.5 h-px bg-gray-200"></div>
+    </div>
+
+    <!-- Results List -->
+    <div class="space-y-0">
+        {{#each this}}
+        <div
+            class="flex items-center gap-2 py-1 px-2 text-xs hover:bg-gray-50 transition {{#if (eq rank 1)}}bg-yellow-50 border-l border-yellow-400{{else if (eq rank 2)}}bg-gray-50 border-l border-gray-400{{else if (eq rank 3)}}bg-orange-50 border-l border-orange-400{{else}}border-l border-transparent{{/if}}">
+            <!-- Rank -->
+            <div class="w-6 text-center flex-shrink-0">
+                {{#if (eq rank 1)}}
+                <span class="text-xs">🥇</span>
+                {{else if (eq rank 2)}}
+                <span class="text-xs">🥈</span>
+                {{else if (eq rank 3)}}
+                <span class="text-xs">🥉</span>
+                {{else}}
+                <span class="text-xs font-medium text-gray-500">{{rank}}</span>
+                {{/if}}
+            </div>
+
+            <!-- Team Name -->
+            <div class="flex-1 min-w-0">
+                <span class="text-xs font-medium text-gray-900 truncate">{{team_name}}</span>
+            </div>
+
+            <!-- Table -->
+            <div class="w-12 flex-shrink-0 text-xs text-gray-500">
+                {{table_name}}
+            </div>
+
+            <!-- Metadata -->
+            <div class="w-16 flex-shrink-0 text-xs text-gray-500">
+                {{rounds_completed}}r • {{judge_count}}j
+            </div>
+
+            <!-- Score -->
+            <div class="w-14 text-right flex-shrink-0">
+                <span class="text-xs font-bold
+                    {{#if (eq rank 1)}}text-yellow-700
+                    {{else if (eq rank 2)}}text-gray-700
+                    {{else if (eq rank 3)}}text-orange-700
+                    {{else}}text-gray-900{{/if}}">
+                    {{toFixed total_score 1}}
+                </span>
+            </div>
+        </div>
+        {{/each}}
+    </div>
+</div>
+{{/each}}
+{{/if}}
