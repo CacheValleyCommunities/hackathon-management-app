@@ -455,7 +455,16 @@ router.post('/judges/add', requireAdmin, async (req, res) => {
       email.toLowerCase().trim(),
       name || null,
       selectedRole,
-      linkedTeamId
+      linkedTeamId,
+      {
+        privacy_policy_accepted: 1,
+        terms_accepted: 1,
+        acceptable_use_accepted: 1,
+        policies_accepted_at: new Date().toISOString(),
+        email_preferences: 1,
+        is_under_18: 0,
+        guardian_email: null
+      }
     );
 
     // Send confirmation email
