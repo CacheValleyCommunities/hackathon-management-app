@@ -66,31 +66,70 @@ const createTables = () => {
           return;
         }
         // Add policy acceptance and user preference columns (migration)
-        // Use a helper function to safely add columns if they don't exist
-        const addColumnIfNotExists = (columnName, columnDef) => {
-          db.all(`PRAGMA table_info(users)`, [], (err, columns) => {
-            if (err) {
-              console.error(`Error checking columns: ${err.message}`);
-              return;
-            }
-            const columnExists = columns.some(col => col.name === columnName);
-            if (!columnExists) {
-              db.run(`ALTER TABLE users ADD COLUMN ${columnName} ${columnDef}`, (err) => {
-                if (err && !err.message.includes('duplicate column')) {
-                  console.error(`Error adding column ${columnName}: ${err.message}`);
+        // All required policy columns that must be present
+        const requiredPolicyColumns = [
+          { name: 'privacy_policy_accepted', def: 'INTEGER DEFAULT 0' },
+          { name: 'terms_accepted', def: 'INTEGER DEFAULT 0' },
+          { name: 'acceptable_use_accepted', def: 'INTEGER DEFAULT 0' },
+          { name: 'policies_accepted_at', def: 'DATETIME' },
+          { name: 'guardian_email', def: 'TEXT' },
+          { name: 'email_preferences', def: 'INTEGER DEFAULT 0' },
+          { name: 'is_under_18', def: 'INTEGER DEFAULT 0' }
+        ];
+
+        // Check all columns at once and add missing ones sequentially
+        db.all(`PRAGMA table_info(users)`, [], (err, columns) => {
+          if (err) {
+            console.error(`Error checking users columns: ${err.message}`);
+            return;
+          }
+          const existingColumns = columns.map(col => col.name);
+          const columnsToAdd = requiredPolicyColumns.filter(col => !existingColumns.includes(col.name));
+
+          if (columnsToAdd.length === 0) {
+            // All columns already exist
+            return;
+          }
+
+          console.log(`Adding ${columnsToAdd.length} missing policy columns to users table...`);
+
+          // Add columns sequentially to ensure they complete
+          let index = 0;
+          const addNextColumn = () => {
+            if (index >= columnsToAdd.length) {
+              // Verify all columns were added
+              db.all(`PRAGMA table_info(users)`, [], (verifyErr, verifyColumns) => {
+                if (!verifyErr) {
+                  const verifyExisting = verifyColumns.map(col => col.name);
+                  const stillMissing = requiredPolicyColumns.filter(col => !verifyExisting.includes(col.name));
+                  if (stillMissing.length > 0) {
+                    console.error(`Warning: Some policy columns could not be added: ${stillMissing.map(c => c.name).join(', ')}`);
+                  } else {
+                    console.log('✓ All policy columns verified in users table');
+                  }
                 }
               });
+              return; // All columns processed
             }
-          });
-        };
+            const col = columnsToAdd[index];
+            index++;
 
-        addColumnIfNotExists('privacy_policy_accepted', 'INTEGER DEFAULT 0');
-        addColumnIfNotExists('terms_accepted', 'INTEGER DEFAULT 0');
-        addColumnIfNotExists('acceptable_use_accepted', 'INTEGER DEFAULT 0');
-        addColumnIfNotExists('policies_accepted_at', 'DATETIME');
-        addColumnIfNotExists('guardian_email', 'TEXT');
-        addColumnIfNotExists('email_preferences', 'INTEGER DEFAULT 0');
-        addColumnIfNotExists('is_under_18', 'INTEGER DEFAULT 0');
+            db.run(`ALTER TABLE users ADD COLUMN ${col.name} ${col.def}`, (err) => {
+              if (err) {
+                if (err.message.includes('duplicate column')) {
+                  // Column was added by another process, continue
+                } else {
+                  console.error(`Error adding column ${col.name}: ${err.message}`);
+                }
+              } else {
+                console.log(`  ✓ Added column: ${col.name}`);
+              }
+              addNextColumn(); // Process next column
+            });
+          };
+
+          addNextColumn(); // Start adding columns
+        });
       });
 
       // Magic link tokens table
@@ -154,33 +193,35 @@ const createTables = () => {
           return;
         }
         // Add columns if they don't exist (migration)
-        const addTeamColumnIfNotExists = (columnName, columnDef) => {
-          db.all(`PRAGMA table_info(teams)`, [], (err, columns) => {
-            if (err) {
-              console.error(`Error checking teams columns: ${err.message}`);
-              return;
-            }
-            const columnExists = columns.some(col => col.name === columnName);
-            if (!columnExists) {
-              db.run(`ALTER TABLE teams ADD COLUMN ${columnName} ${columnDef}`, (err) => {
+        db.all(`PRAGMA table_info(teams)`, [], (err, columns) => {
+          if (err) {
+            console.error(`Error checking teams columns: ${err.message}`);
+            return;
+          }
+          const existingColumns = columns.map(col => col.name);
+          const columnsToAdd = [
+            { name: 'division', def: 'TEXT' },
+            { name: 'category_id', def: 'INTEGER' },
+            { name: 'is_published', def: 'INTEGER DEFAULT 0' },
+            { name: 'team_members', def: 'TEXT' },
+            { name: 'website_link', def: 'TEXT' },
+            { name: 'readme_content', def: 'TEXT' },
+            { name: 'screenshots', def: 'TEXT' },
+            { name: 'banner_image', def: 'TEXT' },
+            { name: 'logo_image', def: 'TEXT' },
+            { name: 'team_leader_email', def: 'TEXT' }
+          ];
+
+          columnsToAdd.forEach(col => {
+            if (!existingColumns.includes(col.name)) {
+              db.run(`ALTER TABLE teams ADD COLUMN ${col.name} ${col.def}`, (err) => {
                 if (err && !err.message.includes('duplicate column')) {
-                  console.error(`Error adding column ${columnName}: ${err.message}`);
+                  console.error(`Error adding column ${col.name}: ${err.message}`);
                 }
               });
             }
           });
-        };
-
-        addTeamColumnIfNotExists('division', 'TEXT');
-        addTeamColumnIfNotExists('category_id', 'INTEGER');
-        addTeamColumnIfNotExists('is_published', 'INTEGER DEFAULT 0');
-        addTeamColumnIfNotExists('team_members', 'TEXT');
-        addTeamColumnIfNotExists('website_link', 'TEXT');
-        addTeamColumnIfNotExists('readme_content', 'TEXT');
-        addTeamColumnIfNotExists('screenshots', 'TEXT');
-        addTeamColumnIfNotExists('banner_image', 'TEXT');
-        addTeamColumnIfNotExists('logo_image', 'TEXT');
-        addTeamColumnIfNotExists('team_leader_email', 'TEXT');
+        });
       });
 
       // Team screenshots table (for better organization)
@@ -324,14 +365,17 @@ const createTables = () => {
       db.run(`CREATE INDEX IF NOT EXISTS idx_teams_table ON teams(table_name)`, () => { });
       db.run(`CREATE INDEX IF NOT EXISTS idx_tokens_email ON magic_tokens(email, expires_at, used)`, () => {
         console.log('Database tables initialized');
-        // Initialize default admin from .env
-        initializeDefaultAdmin().then(() => {
-          console.log('Database initialization complete');
-          resolve();
-        }).catch((err) => {
-          console.error('Error during initialization:', err);
-          resolve(); // Don't fail initialization if setup fails
-        });
+        // Wait a bit for column migrations to complete, then initialize default admin
+        // This ensures all ALTER TABLE statements have finished
+        setTimeout(() => {
+          initializeDefaultAdmin().then(() => {
+            console.log('Database initialization complete');
+            resolve();
+          }).catch((err) => {
+            console.error('Error during initialization:', err);
+            resolve(); // Don't fail initialization if setup fails
+          });
+        }, 100); // Small delay to ensure migrations complete
       });
     });
   });
