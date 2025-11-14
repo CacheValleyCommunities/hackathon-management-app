@@ -66,13 +66,31 @@ const createTables = () => {
           return;
         }
         // Add policy acceptance and user preference columns (migration)
-        db.run(`ALTER TABLE users ADD COLUMN privacy_policy_accepted INTEGER DEFAULT 0`, () => { });
-        db.run(`ALTER TABLE users ADD COLUMN terms_accepted INTEGER DEFAULT 0`, () => { });
-        db.run(`ALTER TABLE users ADD COLUMN acceptable_use_accepted INTEGER DEFAULT 0`, () => { });
-        db.run(`ALTER TABLE users ADD COLUMN policies_accepted_at DATETIME`, () => { });
-        db.run(`ALTER TABLE users ADD COLUMN guardian_email TEXT`, () => { });
-        db.run(`ALTER TABLE users ADD COLUMN email_preferences INTEGER DEFAULT 0`, () => { });
-        db.run(`ALTER TABLE users ADD COLUMN is_under_18 INTEGER DEFAULT 0`, () => { });
+        // Use a helper function to safely add columns if they don't exist
+        const addColumnIfNotExists = (columnName, columnDef) => {
+          db.all(`PRAGMA table_info(users)`, [], (err, columns) => {
+            if (err) {
+              console.error(`Error checking columns: ${err.message}`);
+              return;
+            }
+            const columnExists = columns.some(col => col.name === columnName);
+            if (!columnExists) {
+              db.run(`ALTER TABLE users ADD COLUMN ${columnName} ${columnDef}`, (err) => {
+                if (err && !err.message.includes('duplicate column')) {
+                  console.error(`Error adding column ${columnName}: ${err.message}`);
+                }
+              });
+            }
+          });
+        };
+
+        addColumnIfNotExists('privacy_policy_accepted', 'INTEGER DEFAULT 0');
+        addColumnIfNotExists('terms_accepted', 'INTEGER DEFAULT 0');
+        addColumnIfNotExists('acceptable_use_accepted', 'INTEGER DEFAULT 0');
+        addColumnIfNotExists('policies_accepted_at', 'DATETIME');
+        addColumnIfNotExists('guardian_email', 'TEXT');
+        addColumnIfNotExists('email_preferences', 'INTEGER DEFAULT 0');
+        addColumnIfNotExists('is_under_18', 'INTEGER DEFAULT 0');
       });
 
       // Magic link tokens table
@@ -135,20 +153,34 @@ const createTables = () => {
           reject(err);
           return;
         }
-        // Add division column if it doesn't exist (migration)
-        db.run(`ALTER TABLE teams ADD COLUMN division TEXT`, () => { });
-        // Add category_id column if it doesn't exist (migration)
-        db.run(`ALTER TABLE teams ADD COLUMN category_id INTEGER`, () => { });
-        // Add is_published column if it doesn't exist (migration)
-        db.run(`ALTER TABLE teams ADD COLUMN is_published INTEGER DEFAULT 0`, () => { });
-        // Add new columns for enhanced project features
-        db.run(`ALTER TABLE teams ADD COLUMN team_members TEXT`, () => { });
-        db.run(`ALTER TABLE teams ADD COLUMN website_link TEXT`, () => { });
-        db.run(`ALTER TABLE teams ADD COLUMN readme_content TEXT`, () => { });
-        db.run(`ALTER TABLE teams ADD COLUMN screenshots TEXT`, () => { });
-        db.run(`ALTER TABLE teams ADD COLUMN banner_image TEXT`, () => { });
-        db.run(`ALTER TABLE teams ADD COLUMN logo_image TEXT`, () => { });
-        db.run(`ALTER TABLE teams ADD COLUMN team_leader_email TEXT`, () => { });
+        // Add columns if they don't exist (migration)
+        const addTeamColumnIfNotExists = (columnName, columnDef) => {
+          db.all(`PRAGMA table_info(teams)`, [], (err, columns) => {
+            if (err) {
+              console.error(`Error checking teams columns: ${err.message}`);
+              return;
+            }
+            const columnExists = columns.some(col => col.name === columnName);
+            if (!columnExists) {
+              db.run(`ALTER TABLE teams ADD COLUMN ${columnName} ${columnDef}`, (err) => {
+                if (err && !err.message.includes('duplicate column')) {
+                  console.error(`Error adding column ${columnName}: ${err.message}`);
+                }
+              });
+            }
+          });
+        };
+
+        addTeamColumnIfNotExists('division', 'TEXT');
+        addTeamColumnIfNotExists('category_id', 'INTEGER');
+        addTeamColumnIfNotExists('is_published', 'INTEGER DEFAULT 0');
+        addTeamColumnIfNotExists('team_members', 'TEXT');
+        addTeamColumnIfNotExists('website_link', 'TEXT');
+        addTeamColumnIfNotExists('readme_content', 'TEXT');
+        addTeamColumnIfNotExists('screenshots', 'TEXT');
+        addTeamColumnIfNotExists('banner_image', 'TEXT');
+        addTeamColumnIfNotExists('logo_image', 'TEXT');
+        addTeamColumnIfNotExists('team_leader_email', 'TEXT');
       });
 
       // Team screenshots table (for better organization)
@@ -1262,9 +1294,9 @@ const getTopTeamPerCategory = (round) => {
               };
             }
           });
-          
+
           // Convert to array and sort by category name
-          resolve(Object.values(categoryLeaders).sort((a, b) => 
+          resolve(Object.values(categoryLeaders).sort((a, b) =>
             a.category_name.localeCompare(b.category_name)
           ));
         }
