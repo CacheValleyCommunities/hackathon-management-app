@@ -355,6 +355,9 @@ router.get('/results', requireAuth, async (req, res) => {
     // Get event settings for divisions
     const eventSettings = await db.getEventSettings();
     const divisions = eventSettings.divisions || [];
+    
+    // Get top team per category for sidebar
+    const categoryLeaders = await db.getTopTeamPerCategory(round) || [];
 
     res.render('scores/results', {
       title: 'Live Leaderboard',
@@ -362,6 +365,7 @@ router.get('/results', requireAuth, async (req, res) => {
       divisions,
       round,
       selectedDivision,
+      categoryLeaders,
       layout: 'minimal'
     });
   } catch (error) {
@@ -386,10 +390,14 @@ router.get('/results/json', requireAuth, async (req, res) => {
     if (selectedDivision) {
       results = { [selectedDivision]: allResults[selectedDivision] || [] };
     }
+    
+    // Get top team per category for sidebar
+    const categoryLeaders = await db.getTopTeamPerCategory(round) || [];
 
     // Render just the results partial
     res.render('partials/results-content', {
       results,
+      categoryLeaders,
       round,
       layout: false
     });

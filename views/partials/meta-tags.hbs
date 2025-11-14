@@ -1,0 +1,42 @@
+{{!-- Open Graph and Twitter Card Meta Tags --}}
+{{#if meta}}
+{{!-- Open Graph / Facebook --}}
+<meta property="og:type" content="{{meta.type}}" />
+<meta property="og:title" content="{{meta.title}}" />
+{{#if meta.description}}
+<meta property="og:description" content="{{meta.description}}" />
+{{/if}}
+{{#if meta.url}}
+<meta property="og:url" content="{{meta.url}}" />
+{{/if}}
+{{#if meta.image}}
+<meta property="og:image" content="{{meta.image}}" />
+{{#if meta.imageWidth}}
+<meta property="og:image:width" content="{{meta.imageWidth}}" />
+{{/if}}
+{{#if meta.imageHeight}}
+<meta property="og:image:height" content="{{meta.imageHeight}}" />
+{{/if}}
+{{/if}}
+{{#if meta.siteName}}
+<meta property="og:site_name" content="{{meta.siteName}}" />
+{{/if}}
+
+{{!-- Twitter Card --}}
+<meta name="twitter:card" content="{{#if meta.twitterCard}}{{meta.twitterCard}}{{else}}summary_large_image{{/if}}" />
+<meta name="twitter:title" content="{{meta.title}}" />
+{{#if meta.description}}
+<meta name="twitter:description" content="{{meta.description}}" />
+{{/if}}
+{{#if meta.image}}
+<meta name="twitter:image" content="{{meta.image}}" />
+{{/if}}
+{{#if meta.twitterSite}}
+<meta name="twitter:site" content="{{meta.twitterSite}}" />
+{{/if}}
+{{#if meta.twitterCreator}}
+<meta name="twitter:creator" content="{{meta.twitterCreator}}" />
+{{/if}}
+{{/if}}
+
+

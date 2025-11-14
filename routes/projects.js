@@ -59,13 +59,37 @@ router.get('/', async (req, res) => {
       };
     }));
     
+    // Prepare meta tags for Open Graph and Twitter
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const projectsUrl = `${appUrl}/projects${selectedDivision ? `?division=${encodeURIComponent(selectedDivision)}` : ''}`;
+    
+    let metaImage = null;
+    if (eventSettings.logo_filename) {
+      metaImage = `${appUrl}/uploads/${eventSettings.logo_filename}`;
+    }
+    
+    const description = selectedDivision 
+      ? `Explore projects from the ${selectedDivision} division at ${eventSettings.event_name || 'this hackathon'}`
+      : `Explore all amazing projects from ${eventSettings.event_name || 'this hackathon'}`;
+    
+    const meta = {
+      type: 'website',
+      title: `Projects${selectedDivision ? ` - ${selectedDivision}` : ''} - ${eventSettings.event_name || 'Hackathon'}`,
+      description: description,
+      url: projectsUrl,
+      image: metaImage,
+      siteName: eventSettings.event_name || 'Hackathon',
+      twitterCard: 'summary_large_image'
+    };
+    
     res.render('projects/index', {
       title: 'Projects',
       teams: teamsWithScreenshots,
       eventSettings,
       divisions,
       selectedDivision,
-      query: req.query
+      query: req.query,
+      meta
     });
   } catch (error) {
     console.error('Projects page error:', error);
@@ -87,6 +111,16 @@ router.get('/:teamId', async (req, res) => {
     if (!team) {
       return res.render('error', {
         message: 'Project not found'
+      });
+    }
+
+    // Check if project is published (admins can always view)
+    const isAdmin = req.session && req.session.user && req.session.user.role === 'admin';
+    const isTeamOwner = req.session && req.session.user && req.session.user.team_id === teamId;
+    
+    if (!team.is_published && !isAdmin && !isTeamOwner) {
+      return res.render('error', {
+        message: 'This project is not publicly available'
       });
     }
     
@@ -113,12 +147,47 @@ router.get('/:teamId', async (req, res) => {
     
     const screenshots = await db.getTeamScreenshots(teamId);
     
+    // Prepare meta tags for Open Graph and Twitter
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const projectUrl = `${appUrl}/projects/${teamId}`;
+    
+    // Get first screenshot or banner image for meta image
+    let metaImage = null;
+    if (team.banner_image) {
+      metaImage = `${appUrl}/uploads/screenshots/${team.banner_image}`;
+    } else if (screenshots && screenshots.length > 0) {
+      metaImage = `${appUrl}/uploads/screenshots/${screenshots[0].filename}`;
+    } else if (eventSettings.logo_filename) {
+      metaImage = `${appUrl}/uploads/${eventSettings.logo_filename}`;
+    }
+    
+    // Create description from readme or project info
+    let description = `${team.project_name} by ${team.name}`;
+    if (team.readme_content) {
+      // Strip markdown and get first 200 characters
+      const plainText = team.readme_content.replace(/[#*`_~\[\]()]/g, '').replace(/\n/g, ' ').trim();
+      description = plainText.substring(0, 200) + (plainText.length > 200 ? '...' : '');
+    } else {
+      description = `${team.project_name} by ${team.name}${team.division ? ` - ${team.division} Division` : ''}`;
+    }
+    
+    const meta = {
+      type: 'website',
+      title: `${team.project_name} - ${team.name}`,
+      description: description,
+      url: projectUrl,
+      image: metaImage,
+      siteName: eventSettings.event_name || 'Hackathon',
+      twitterCard: 'summary_large_image'
+    };
+    
     res.render('projects/detail', {
       title: `${team.project_name} - ${team.name}`,
       team: teamData,
       screenshots,
       eventSettings,
-      canViewContactEmail
+      canViewContactEmail,
+      meta
     });
   } catch (error) {
     console.error('Project detail error:', error);

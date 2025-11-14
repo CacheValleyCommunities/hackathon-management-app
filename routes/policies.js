@@ -4,39 +4,128 @@ const db = require('../db/database');
 const emailService = require('../services/email');
 
 // GET Privacy Policy
-router.get('/privacy', (req, res) => {
-  res.render('policies/privacy', {
-    title: 'Privacy Policy',
-    layout: 'main'
-  });
+router.get('/privacy', async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings();
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
+    
+    const meta = {
+      type: 'website',
+      title: 'Privacy Policy',
+      description: `Privacy Policy for ${eventSettings.event_name || 'this hackathon'}. Learn how we collect, use, and protect your personal information.`,
+      url: `${appUrl}/policies/privacy`,
+      image: metaImage,
+      siteName: eventSettings.event_name || 'Hackathon',
+      twitterCard: 'summary'
+    };
+    
+    res.render('policies/privacy', {
+      title: 'Privacy Policy',
+      layout: 'main',
+      eventSettings,
+      meta
+    });
+  } catch (error) {
+    console.error('Error loading privacy policy:', error);
+    res.render('policies/privacy', {
+      title: 'Privacy Policy',
+      layout: 'main',
+      eventSettings: { event_name: 'Hackathon' }
+    });
+  }
 });
 
 // GET Terms of Use
-router.get('/terms', (req, res) => {
-  res.render('policies/terms', {
-    title: 'Terms of Use',
-    layout: 'main'
-  });
+router.get('/terms', async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings();
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
+    
+    const meta = {
+      type: 'website',
+      title: 'Terms of Use',
+      description: `Terms of Use for ${eventSettings.event_name || 'this hackathon'}. Read our terms and conditions for using this platform.`,
+      url: `${appUrl}/policies/terms`,
+      image: metaImage,
+      siteName: eventSettings.event_name || 'Hackathon',
+      twitterCard: 'summary'
+    };
+    
+    res.render('policies/terms', {
+      title: 'Terms of Use',
+      layout: 'main',
+      eventSettings,
+      meta
+    });
+  } catch (error) {
+    console.error('Error loading terms of use:', error);
+    res.render('policies/terms', {
+      title: 'Terms of Use',
+      layout: 'main',
+      eventSettings: { event_name: 'Hackathon' }
+    });
+  }
 });
 
 // GET Acceptable Use Policy
-router.get('/acceptable-use', (req, res) => {
-  res.render('policies/acceptable-use', {
-    title: 'Acceptable Use Policy',
-    layout: 'main'
-  });
+router.get('/acceptable-use', async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings();
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
+    
+    const meta = {
+      type: 'website',
+      title: 'Acceptable Use Policy',
+      description: `Acceptable Use Policy for ${eventSettings.event_name || 'this hackathon'}. Guidelines for appropriate use of this platform.`,
+      url: `${appUrl}/policies/acceptable-use`,
+      image: metaImage,
+      siteName: eventSettings.event_name || 'Hackathon',
+      twitterCard: 'summary'
+    };
+    
+    res.render('policies/acceptable-use', {
+      title: 'Acceptable Use Policy',
+      layout: 'main',
+      eventSettings,
+      meta
+    });
+  } catch (error) {
+    console.error('Error loading acceptable use policy:', error);
+    res.render('policies/acceptable-use', {
+      title: 'Acceptable Use Policy',
+      layout: 'main',
+      eventSettings: { event_name: 'Hackathon' }
+    });
+  }
 });
 
 // GET Data Removal Request Form
 router.get('/data-removal-request', async (req, res) => {
   try {
     const eventSettings = await db.getEventSettings();
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
+    
+    const meta = {
+      type: 'website',
+      title: 'Data Removal Request',
+      description: `Request data removal from ${eventSettings.event_name || 'this hackathon'}. Submit a request to have your personal data removed.`,
+      url: `${appUrl}/policies/data-removal-request`,
+      image: metaImage,
+      siteName: eventSettings.event_name || 'Hackathon',
+      twitterCard: 'summary'
+    };
+    
     res.render('policies/data-removal-request', {
       title: 'Data Removal Request',
       layout: 'main',
       eventSettings,
       error: null,
-      success: null
+      success: null,
+      meta
     });
   } catch (error) {
     console.error('Error loading data removal request form:', error);

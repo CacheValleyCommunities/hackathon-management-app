@@ -86,6 +86,159 @@ router.post('/increment-round', requireAdmin, async (req, res) => {
   }
 });
 
+// GET add team page (must be before /teams/:id/edit to avoid route conflict)
+router.get('/teams/add', requireAdmin, async (req, res) => {
+  try {
+    const tables = await db.getTableNames();
+    const categories = await db.getCategories();
+    const eventSettings = await db.getEventSettings();
+
+    res.render('admin/add-team', {
+      title: 'Add Team',
+      tables,
+      categories,
+      divisions: eventSettings.divisions || [],
+      error: null,
+      success: null
+    });
+  } catch (error) {
+    console.error('Add team page error:', error);
+    res.render('error', {
+      message: 'Failed to load add team page',
+      error: process.env.NODE_ENV === 'development' ? error : {}
+    });
+  }
+});
+
+// POST add team
+router.post('/teams/add', requireAdmin, async (req, res) => {
+  try {
+    const { teamName, tableName, projectName, contactEmail, githubLink, websiteLink, division, categoryId, isPublished } = req.body;
+
+    const tables = await db.getTableNames();
+    const categories = await db.getCategories();
+    const eventSettings = await db.getEventSettings();
+
+    // Validation
+    if (!teamName || !tableName || !projectName) {
+      return res.render('admin/add-team', {
+        title: 'Add Team',
+        tables,
+        categories,
+        divisions: eventSettings.divisions || [],
+        error: 'Please fill in all required fields (Team Name, Table Name, Project Name)',
+        success: null
+      });
+    }
+
+    // Validate category is selected
+    if (!categoryId || categoryId === '') {
+      return res.render('admin/add-team', {
+        title: 'Add Team',
+        tables,
+        categories,
+        divisions: eventSettings.divisions || [],
+        error: 'Please select a category for the team',
+        success: null
+      });
+    }
+
+    // Validate division is selected (if divisions exist)
+    if (eventSettings.divisions && eventSettings.divisions.length > 0 && (!division || division === '')) {
+      return res.render('admin/add-team', {
+        title: 'Add Team',
+        tables,
+        categories,
+        divisions: eventSettings.divisions || [],
+        error: 'Please select a division for the team',
+        success: null
+      });
+    }
+
+    // Check for profanity in team name and project name
+    const teamNameError = await checkAndReturnError(teamName, 'Team name');
+    const projectNameError = await checkAndReturnError(projectName, 'Project name');
+
+    if (teamNameError || projectNameError) {
+      return res.render('admin/add-team', {
+        title: 'Add Team',
+        tables,
+        categories,
+        divisions: eventSettings.divisions || [],
+        error: teamNameError || projectNameError,
+        success: null
+      });
+    }
+
+    // Normalize table name
+    let normalizedTableName = tableName.trim();
+    if (/^\d+$/.test(normalizedTableName)) {
+      normalizedTableName = `Table ${normalizedTableName}`;
+    }
+
+    // Check if table exists, create if it doesn't
+    if (!tables.includes(normalizedTableName)) {
+      await db.syncTables([{ name: normalizedTableName }]);
+    }
+
+    // Check if team name already exists
+    const existingTeams = await db.getTeams();
+    const teamExists = existingTeams.some(t => t.name.toLowerCase() === teamName.toLowerCase());
+
+    if (teamExists) {
+      return res.render('admin/add-team', {
+        title: 'Add Team',
+        tables,
+        categories,
+        divisions: eventSettings.divisions || [],
+        error: 'A team with this name already exists. Please choose a different name.',
+        success: null
+      });
+    }
+
+    // Parse category ID
+    const categoryIdInt = categoryId && categoryId !== '' ? parseInt(categoryId) : null;
+    // Parse publish status
+    const isPublishedBool = isPublished === '1' || isPublished === true;
+
+    // Create team without user data
+    const team = await db.createTeam({
+      name: teamName.trim(),
+      table_name: normalizedTableName,
+      project_name: projectName.trim(),
+      contact_email: contactEmail ? contactEmail.trim() : null,
+      github_link: githubLink ? githubLink.trim() : null,
+      website_link: websiteLink ? websiteLink.trim() : null,
+      division: division || null,
+      category_id: categoryIdInt,
+      is_published: isPublishedBool,
+      team_leader_email: null // No user data required
+    });
+
+    res.render('admin/add-team', {
+      title: 'Add Team',
+      tables,
+      categories,
+      divisions: eventSettings.divisions || [],
+      error: null,
+      success: `Team "${teamName}" successfully created! The team can now be judged without requiring user accounts.`
+    });
+  } catch (error) {
+    console.error('Add team error:', error);
+    const tables = await db.getTableNames();
+    const categories = await db.getCategories();
+    const eventSettings = await db.getEventSettings();
+    res.render('admin/add-team', {
+      title: 'Add Team',
+      tables,
+      categories,
+      divisions: eventSettings.divisions || [],
+      error: 'An error occurred while creating the team. Please try again.',
+      success: null
+    });
+  }
+});
+
 // GET edit team page
 router.get('/teams/:id/edit', requireAdmin, async (req, res) => {
   try {
@@ -101,12 +254,14 @@ router.get('/teams/:id/edit', requireAdmin, async (req, res) => {
     // Get all teams to check for duplicate names
     const allTeams = await db.getTeams(null, true); // Include sensitive fields for admin
     const tables = await db.getTableNames();
+    const categories = await db.getCategories();
     const eventSettings = await db.getEventSettings();
 
     res.render('admin/edit-team', {
       title: `Edit Team - ${team.name}`,
       team,
       tables,
+      categories,
       allTeams,
       divisions: eventSettings.divisions || []
     });
@@ -123,11 +278,31 @@ router.get('/teams/:id/edit', requireAdmin, async (req, res) => {
 router.post('/teams/:id/update', requireAdmin, async (req, res) => {
   try {
     const teamId = parseInt(req.params.id);
-    const { teamName, tableName, projectName, contactEmail, githubLink, division } = req.body;
+    const { teamName, tableName, projectName, contactEmail, githubLink, division, categoryId, isPublished } = req.body;
 
     if (!teamName || !tableName || !projectName) {
       return res.render('error', {
         message: 'Please fill in all required fields'
+      });
+    }
+
+    // Validate category is selected
+    if (!categoryId || categoryId === '') {
+      const existingTeam = await db.getTeamById(teamId, true);
+      if (!existingTeam) {
+        return res.render('error', {
+          message: 'Team not found'
+        });
+      }
+      const eventSettings = await db.getEventSettings();
+      const categories = await db.getCategories();
+      return res.render('admin/edit-team', {
+        title: `Edit Team - ${existingTeam.name}`,
+        team: existingTeam,
+        tables: await db.getTableNames(),
+        categories,
+        divisions: eventSettings.divisions || [],
+        error: 'Please select a category for the team'
       });
     }
 
@@ -150,10 +325,12 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
 
     if (teamNameError || projectNameError) {
       const eventSettings = await db.getEventSettings();
+      const categories = await db.getCategories();
       return res.render('admin/edit-team', {
         title: `Edit Team - ${existingTeam.name}`,
         team: existingTeam,
         tables: await db.getTableNames(),
+        categories,
         divisions: eventSettings.divisions || [],
         error: teamNameError || projectNameError
       });
@@ -161,14 +338,21 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
 
     if (nameExists) {
       const eventSettings = await db.getEventSettings();
+      const categories = await db.getCategories();
       return res.render('admin/edit-team', {
         title: `Edit Team - ${existingTeam.name}`,
         team: existingTeam,
         tables: await db.getTableNames(),
+        categories,
         divisions: eventSettings.divisions || [],
         error: 'A team with this name already exists'
       });
     }
+
+    // Parse category ID
+    const categoryIdInt = categoryId && categoryId !== '' ? parseInt(categoryId) : null;
+    // Parse publish status
+    const isPublishedBool = isPublished === '1' || isPublished === true;
 
     await db.updateTeam(teamId, {
       name: teamName.trim(),
@@ -176,7 +360,9 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
       project_name: projectName.trim(),
       contact_email: contactEmail ? contactEmail.trim() : null,
       github_link: githubLink ? githubLink.trim() : null,
-      division: division || null
+      division: division || null,
+      category_id: categoryIdInt,
+      is_published: isPublishedBool
     });
 
     res.redirect('/admin?success=team_updated');
@@ -487,6 +673,96 @@ router.post('/landing', requireAdmin, upload.single('heroBanner'), async (req, r
       error: error.message || 'Failed to update landing page settings',
       success: null
     });
+  }
+});
+
+// GET category management page
+router.get('/categories', requireAdmin, async (req, res) => {
+  try {
+    const categories = await db.getCategories();
+    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+
+    // Create a map of category usage with counts
+    const categoryUsage = {};
+    teams.forEach(team => {
+      if (team.category_id) {
+        const categoryId = team.category_id;
+        if (!categoryUsage[categoryId]) {
+          categoryUsage[categoryId] = { teams: [], count: 0 };
+        }
+        categoryUsage[categoryId].teams.push(team);
+        categoryUsage[categoryId].count++;
+      }
+    });
+
+    res.render('admin/categories', {
+      title: 'Manage Categories',
+      categories,
+      categoryUsage,
+      query: req.query
+    });
+  } catch (error) {
+    console.error('Category management error:', error);
+    res.render('error', {
+      message: 'Failed to load categories',
+      error: process.env.NODE_ENV === 'development' ? error : {}
+    });
+  }
+});
+
+// POST add new category
+router.post('/categories/add', requireAdmin, async (req, res) => {
+  try {
+    const { categoryName } = req.body;
+
+    if (!categoryName || !categoryName.trim()) {
+      return res.redirect('/admin/categories?error=empty');
+    }
+
+    const normalizedCategoryName = categoryName.trim();
+
+    // Check if category already exists
+    const existingCategories = await db.getCategoryNames();
+    if (existingCategories.includes(normalizedCategoryName)) {
+      return res.redirect('/admin/categories?error=exists');
+    }
+
+    // Add the category
+    await db.syncCategories([{ name: normalizedCategoryName }]);
+
+    res.redirect('/admin/categories?success=added');
+  } catch (error) {
+    console.error('Add category error:', error);
+    res.redirect('/admin/categories?error=failed');
+  }
+});
+
+// POST delete category
+router.post('/categories/:id/delete', requireAdmin, async (req, res) => {
+  try {
+    const categoryId = parseInt(req.params.id);
+
+    // Check if category has teams assigned
+    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const hasTeams = teams.some(team => team.category_id === categoryId);
+
+    if (hasTeams) {
+      return res.redirect('/admin/categories?error=has_teams');
+    }
+
+    // Delete the category
+    const dbInstance = db.getDb();
+    await new Promise((resolve, reject) => {
+      dbInstance.run('DELETE FROM categories WHERE id = ?', [categoryId], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    res.redirect('/admin/categories?success=deleted');
+  } catch (error) {
+    console.error('Delete category error:', error);
+    res.redirect('/admin/categories?error=failed');
   }
 });
 

@@ -172,11 +172,13 @@ router.get('/team/edit', requireParticipant, async (req, res) => {
     }
 
     const screenshots = await db.getTeamScreenshots(teamId);
+    const categories = await db.getCategories();
 
     res.render('participant/edit-team', {
       title: 'Edit Team Information',
       team,
       screenshots,
+      categories,
       isAdmin: userRole === 'admin'
     });
   } catch (error) {
@@ -230,11 +232,25 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
       });
     }
 
-    const { projectName, contactEmail, githubLink, websiteLink, readmeContent, teamMembers, screenshotOrders } = req.body;
+    const { projectName, contactEmail, githubLink, websiteLink, readmeContent, teamMembers, screenshotOrders, categoryId, isPublished } = req.body;
 
     if (!projectName) {
       return res.render('error', {
         message: 'Project name is required'
+      });
+    }
+
+    // Validate category is selected
+    if (!categoryId || categoryId === '') {
+      const screenshots = await db.getTeamScreenshots(teamId);
+      const categories = await db.getCategories();
+      return res.render('participant/edit-team', {
+        title: 'Edit Team Information',
+        team: currentTeam,
+        screenshots,
+        categories,
+        isAdmin: userRole === 'admin',
+        error: 'Please select a category for your team'
       });
     }
 
@@ -359,6 +375,11 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
       logoImage = null;
     }
 
+    // Parse category ID
+    const categoryIdInt = categoryId && categoryId !== '' ? parseInt(categoryId) : null;
+    // Parse publish status
+    const isPublishedBool = isPublished === '1' || isPublished === true;
+
     const updateData = {
       name: currentTeam.name,
       table_name: currentTeam.table_name,
@@ -369,7 +390,9 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
       readme_content: readmeContent ? readmeContent.trim() : null,
       team_members: teamMembersArray,
       banner_image: bannerImage,
-      logo_image: logoImage
+      logo_image: logoImage,
+      category_id: categoryIdInt,
+      is_published: isPublishedBool
     };
 
     await db.updateTeam(teamId, updateData);

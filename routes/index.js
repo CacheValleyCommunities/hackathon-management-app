@@ -26,11 +26,30 @@ router.get('/', async (req, res) => {
         divisionsList = [];
       }
     }
+
+    // Prepare meta tags for landing page
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
+    const eventName = eventSettings.event_name || 'Hackathon';
+
+    const meta = {
+      type: 'website',
+      title: eventName,
+      description: eventSettings.landing_page_content
+        ? eventSettings.landing_page_content.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
+        : `Join ${eventName} - A hackathon event featuring amazing projects and innovative solutions.`,
+      url: appUrl,
+      image: metaImage,
+      siteName: eventName,
+      twitterCard: 'summary_large_image'
+    };
+
     return res.render('landing', {
-      title: eventSettings.event_name || 'Hackathon',
+      title: eventName,
       eventSettings,
       divisionsList,
-      layout: 'main'
+      layout: 'main',
+      meta
     });
   }
 

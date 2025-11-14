@@ -8,20 +8,24 @@ router.get('/', async (req, res) => {
   try {
     const eventSettings = await db.getEventSettings();
     const tables = await db.getTableNames();
+    const categories = await db.getCategories() || [];
     res.render('register', {
       title: 'Team Registration',
       error: null,
       success: null,
       divisions: eventSettings.divisions || [],
-      tables
+      tables: tables || [],
+      categories: categories || []
     });
   } catch (error) {
+    console.error('Error loading registration page:', error);
     res.render('register', {
       title: 'Team Registration',
       error: null,
       success: null,
       divisions: [],
-      tables: []
+      tables: [],
+      categories: []
     });
   }
 });
@@ -33,13 +37,14 @@ router.post('/', async (req, res) => {
 
   try {
     const {
-      teamName, tableName, projectName, contactEmail, githubLink, websiteLink, division, teamMembers,
+      teamName, tableName, projectName, contactEmail, githubLink, websiteLink, division, categoryId, teamMembers,
       isUnder18, guardianEmail, privacyPolicyAccepted, termsAccepted, acceptableUseAccepted, emailPreferences
     } = req.body;
 
     // Load data once
     eventSettings = await db.getEventSettings();
     allTables = await db.getTableNames();
+    const categories = await db.getCategories() || [];
 
     // Validation
     if (!teamName || !tableName || !projectName) {
@@ -48,7 +53,32 @@ router.post('/', async (req, res) => {
         error: 'Please fill in all required fields (Team Name, Table Name, Project Name)',
         success: null,
         divisions: eventSettings.divisions || [],
-        tables: allTables
+        tables: allTables,
+        categories
+      });
+    }
+
+    // Validate category is selected
+    if (!categoryId || categoryId === '') {
+      return res.render('register', {
+        title: 'Team Registration',
+        error: 'Please select a category for your team',
+        success: null,
+        divisions: eventSettings.divisions || [],
+        tables: allTables,
+        categories
+      });
+    }
+
+    // Validate division is selected (if divisions exist)
+    if (eventSettings.divisions && eventSettings.divisions.length > 0 && (!division || division === '')) {
+      return res.render('register', {
+        title: 'Team Registration',
+        error: 'Please select a division for your team',
+        success: null,
+        divisions: eventSettings.divisions || [],
+        tables: allTables,
+        categories
       });
     }
 
@@ -59,7 +89,8 @@ router.post('/', async (req, res) => {
         error: 'You must accept all required policies (Privacy Policy, Terms of Use, and Acceptable Use Policy) to register.',
         success: null,
         divisions: eventSettings.divisions || [],
-        tables: allTables
+        tables: allTables,
+        categories
       });
     }
 
@@ -78,7 +109,8 @@ router.post('/', async (req, res) => {
           error: 'Guardian email is required for participants under 18 years of age.',
           success: null,
           divisions: eventSettings.divisions || [],
-          tables: allTables
+          tables: allTables,
+          categories
         });
       }
       // Use guardian email as contact email if contact email not provided
@@ -93,7 +125,8 @@ router.post('/', async (req, res) => {
           error: 'Contact email is required for participants 18 years of age or older.',
           success: null,
           divisions: eventSettings.divisions || [],
-          tables: allTables
+          tables: allTables,
+          categories
         });
       }
     }
@@ -108,7 +141,8 @@ router.post('/', async (req, res) => {
         error: teamNameError || projectNameError,
         success: null,
         divisions: eventSettings.divisions || [],
-        tables: allTables
+        tables: allTables,
+        categories
       });
     }
 
@@ -135,7 +169,8 @@ router.post('/', async (req, res) => {
         error: 'A team with this name already exists. Please choose a different name.',
         success: null,
         divisions: eventSettings.divisions || [],
-        tables: allTables
+        tables: allTables,
+        categories
       });
     }
 
@@ -182,7 +217,10 @@ router.post('/', async (req, res) => {
       teamContactEmail = finalContactEmail;
     }
 
-    // Create team
+    // Parse category ID
+    const categoryIdInt = categoryId && categoryId !== '' ? parseInt(categoryId) : null;
+
+    // Create team (default to unpublished - teams can publish later)
     const team = await db.createTeam({
       name: teamName.trim(),
       table_name: normalizedTableName,
@@ -191,6 +229,8 @@ router.post('/', async (req, res) => {
       github_link: githubLink ? githubLink.trim() : null,
       website_link: websiteLink ? websiteLink.trim() : null,
       division: division || null,
+      category_id: categoryIdInt,
+      is_published: false, // Default to unpublished
       team_members: teamMembersArray.length > 0 ? teamMembersArray : null,
       team_leader_email: teamLeaderEmail
     });
@@ -306,6 +346,7 @@ router.post('/', async (req, res) => {
       success: successMessage,
       divisions: eventSettings.divisions || [],
       tables: allTables,
+      categories,
       isUnder18: isUnder18Bool,
       guardianEmail: isUnder18Bool ? guardianEmail : null
     });
@@ -314,13 +355,20 @@ router.post('/', async (req, res) => {
     // Ensure we have the data for error rendering
     if (!eventSettings) eventSettings = await db.getEventSettings();
     if (!allTables) allTables = await db.getTableNames();
+    let categories = [];
+    try {
+      categories = await db.getCategories();
+    } catch (catError) {
+      console.error('Error loading categories:', catError);
+    }
 
     res.render('register', {
       title: 'Team Registration',
       error: 'An error occurred during registration. Please try again.',
       success: null,
       divisions: eventSettings.divisions || [],
-      tables: allTables
+      tables: allTables,
+      categories
     });
   }
 });

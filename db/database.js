@@ -104,6 +104,19 @@ const createTables = () => {
         }
       });
 
+      // Categories table (stores category names)
+      db.run(`CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating categories table:', err);
+          reject(err);
+          return;
+        }
+      });
+
       // Teams table (stores team registrations)
       db.run(`CREATE TABLE IF NOT EXISTS teams (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +137,10 @@ const createTables = () => {
         }
         // Add division column if it doesn't exist (migration)
         db.run(`ALTER TABLE teams ADD COLUMN division TEXT`, () => { });
+        // Add category_id column if it doesn't exist (migration)
+        db.run(`ALTER TABLE teams ADD COLUMN category_id INTEGER`, () => { });
+        // Add is_published column if it doesn't exist (migration)
+        db.run(`ALTER TABLE teams ADD COLUMN is_published INTEGER DEFAULT 0`, () => { });
         // Add new columns for enhanced project features
         db.run(`ALTER TABLE teams ADD COLUMN team_members TEXT`, () => { });
         db.run(`ALTER TABLE teams ADD COLUMN website_link TEXT`, () => { });
@@ -302,18 +319,25 @@ const initializeDefaultAdmin = async () => {
     // Check if user already exists
     const existingUser = await getUserByEmail(email);
 
+    // Policy data for admin - all policies accepted by default
+    const policyData = {
+      privacy_policy_accepted: true,
+      terms_accepted: true,
+      acceptable_use_accepted: true,
+      policies_accepted_at: new Date().toISOString(),
+      is_under_18: false,
+      email_preferences: false
+    };
+
     if (existingUser) {
-      // Update existing user to admin if not already admin
-      if (existingUser.role !== 'admin') {
-        await updateUser(email, { role: 'admin' });
-        console.log(`Updated user ${email} to admin role`);
-      } else {
-        console.log(`Default admin ${email} already exists with admin role`);
-      }
+      // Update existing user to admin if not already admin, and ensure policies are accepted
+      const updates = { role: 'admin', ...policyData };
+      await updateUser(email, updates);
+      console.log(`Updated user ${email} to admin role with policies accepted`);
     } else {
-      // Create new admin user
-      await createUser(email, null, 'admin', null);
-      console.log(`Created default admin user: ${email}`);
+      // Create new admin user with policies accepted
+      await createUser(email, null, 'admin', null, policyData);
+      console.log(`Created default admin user: ${email} with policies accepted`);
     }
   } catch (error) {
     console.error('Error initializing default admin:', error);
@@ -572,12 +596,64 @@ const getTableNames = () => {
   });
 };
 
+// Category operations
+const syncCategories = (categories) => {
+  return new Promise((resolve, reject) => {
+    const stmt = db.prepare('INSERT OR REPLACE INTO categories (name, updated_at) VALUES (?, datetime("now"))');
+
+    categories.forEach(category => {
+      stmt.run(category.name);
+    });
+
+    stmt.finalize((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+};
+
+const getCategories = () => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT * FROM categories ORDER BY name', [], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+};
+
+const getCategoryNames = () => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT name FROM categories ORDER BY name', [], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows.map(r => r.name));
+    });
+  });
+};
+
+const getCategoryById = (id) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM categories WHERE id = ?', [id], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
+
+const getCategoryByName = (name) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM categories WHERE name = ?', [name], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
+
 // Team operations
 const createTeam = (teamData) => {
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO teams (name, table_name, project_name, contact_email, github_link, division, team_members, website_link, readme_content, banner_image, logo_image, team_leader_email, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
+      `INSERT INTO teams (name, table_name, project_name, contact_email, github_link, division, category_id, is_published, team_members, website_link, readme_content, banner_image, logo_image, team_leader_email, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
       [
         teamData.name,
         teamData.table_name,
@@ -585,6 +661,8 @@ const createTeam = (teamData) => {
         teamData.contact_email || null,
         teamData.github_link || null,
         teamData.division || null,
+        teamData.category_id || null,
+        teamData.is_published !== undefined ? (teamData.is_published ? 1 : 0) : 0,
         teamData.team_members ? JSON.stringify(teamData.team_members) : null,
         teamData.website_link || null,
         teamData.readme_content || null,
@@ -594,7 +672,7 @@ const createTeam = (teamData) => {
       ],
       function (err) {
         if (err) reject(err);
-        else resolve({ id: this.lastID, name: teamData.name, table_name: teamData.table_name, project_name: teamData.project_name, contact_email: teamData.contact_email, github_link: teamData.github_link, division: teamData.division || null });
+        else resolve({ id: this.lastID, name: teamData.name, table_name: teamData.table_name, project_name: teamData.project_name, contact_email: teamData.contact_email, github_link: teamData.github_link, division: teamData.division || null, category_id: teamData.category_id || null, is_published: teamData.is_published || false });
       }
     );
   });
@@ -622,10 +700,12 @@ const getTeams = (tableName = null, includeSensitive = false) => {
     // Exclude team_leader_email unless explicitly requested (admin only)
     const sensitiveFields = includeSensitive ? ', t.team_leader_email' : '';
     let query = `SELECT t.id, t.name, t.table_name, t.project_name, t.contact_email, 
-                        t.github_link, t.website_link, t.division, t.team_members, 
+                        t.github_link, t.website_link, t.division, t.category_id, 
+                        c.name as category_name, t.is_published, t.team_members, 
                         t.readme_content, t.banner_image, t.logo_image, t.screenshots, 
                         t.created_at, t.updated_at${sensitiveFields}
-                 FROM teams t`;
+                 FROM teams t
+                 LEFT JOIN categories c ON t.category_id = c.id`;
     const params = [];
 
     if (tableName) {
@@ -660,6 +740,8 @@ const getTeams = (tableName = null, includeSensitive = false) => {
         } else {
           row.screenshots = [];
         }
+        // Convert is_published to boolean
+        row.is_published = row.is_published === 1;
       });
       resolve(rows);
     });
@@ -703,12 +785,15 @@ const isTeamLeader = (teamId, userEmail) => {
 const getTeamById = (id, includeSensitive = false) => {
   return new Promise((resolve, reject) => {
     // Exclude team_leader_email unless explicitly requested (admin only)
-    const sensitiveFields = includeSensitive ? ', team_leader_email' : '';
-    const query = `SELECT id, name, table_name, project_name, contact_email, 
-                          github_link, website_link, division, team_members, 
-                          readme_content, banner_image, logo_image, screenshots, 
-                          created_at, updated_at${sensitiveFields}
-                   FROM teams WHERE id = ?`;
+    const sensitiveFields = includeSensitive ? ', t.team_leader_email' : '';
+    const query = `SELECT t.id, t.name, t.table_name, t.project_name, t.contact_email, 
+                          t.github_link, t.website_link, t.division, t.category_id,
+                          c.name as category_name, t.is_published, t.team_members, 
+                          t.readme_content, t.banner_image, t.logo_image, t.screenshots, 
+                          t.created_at, t.updated_at${sensitiveFields}
+                   FROM teams t
+                   LEFT JOIN categories c ON t.category_id = c.id
+                   WHERE t.id = ?`;
     db.get(query, [id], (err, row) => {
       if (err) {
         reject(err);
@@ -734,6 +819,8 @@ const getTeamById = (id, includeSensitive = false) => {
         } else {
           row.screenshots = [];
         }
+        // Convert is_published to boolean
+        row.is_published = row.is_published === 1;
       }
       resolve(row);
     });
@@ -752,6 +839,8 @@ const updateTeam = (id, teamData) => {
     if (teamData.contact_email !== undefined) { updates.push('contact_email = ?'); values.push(teamData.contact_email || null); }
     if (teamData.github_link !== undefined) { updates.push('github_link = ?'); values.push(teamData.github_link || null); }
     if (teamData.division !== undefined) { updates.push('division = ?'); values.push(teamData.division || null); }
+    if (teamData.category_id !== undefined) { updates.push('category_id = ?'); values.push(teamData.category_id || null); }
+    if (teamData.is_published !== undefined) { updates.push('is_published = ?'); values.push(teamData.is_published ? 1 : 0); }
     if (teamData.team_members !== undefined) { updates.push('team_members = ?'); values.push(teamData.team_members ? JSON.stringify(teamData.team_members) : null); }
     if (teamData.website_link !== undefined) { updates.push('website_link = ?'); values.push(teamData.website_link || null); }
     if (teamData.readme_content !== undefined) { updates.push('readme_content = ?'); values.push(teamData.readme_content || null); }
@@ -1126,6 +1215,64 @@ const getTeamsByDivisionWithScores = (division) => {
   });
 };
 
+// Get top team per category (for leaderboard sidebar)
+const getTopTeamPerCategory = (round) => {
+  return new Promise((resolve, reject) => {
+    // Get all teams with their scores grouped by category
+    // Start from teams (not categories) to ensure we get teams with categories and scores
+    db.all(
+      `SELECT 
+        c.id as category_id,
+        c.name as category_name,
+        t.id as team_id,
+        t.name as team_name,
+        t.table_name,
+        t.project_name,
+        COALESCE(SUM(s.score), 0) as total_score,
+        COUNT(DISTINCT s.judge_email) as judge_count,
+        COUNT(DISTINCT s.round) as rounds_completed
+       FROM teams t
+       INNER JOIN categories c ON t.category_id = c.id
+       LEFT JOIN scores s ON t.name = s.team_name AND s.round <= ?
+       WHERE t.category_id IS NOT NULL
+       GROUP BY c.id, c.name, t.id, t.name, t.table_name, t.project_name
+       HAVING total_score > 0 OR judge_count > 0
+       ORDER BY c.name, total_score DESC, judge_count DESC`,
+      [round],
+      (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          // Group by category and get the top team (first one, highest score) for each category
+          const categoryLeaders = {};
+          rows.forEach(row => {
+            const categoryId = row.category_id;
+            // Only take the first team for each category (which will be the highest scoring due to ORDER BY)
+            if (!categoryLeaders[categoryId]) {
+              categoryLeaders[categoryId] = {
+                category_id: row.category_id,
+                category_name: row.category_name,
+                team_id: row.team_id,
+                team_name: row.team_name,
+                table_name: row.table_name,
+                project_name: row.project_name,
+                total_score: parseFloat(row.total_score) || 0,
+                judge_count: parseInt(row.judge_count) || 0,
+                rounds_completed: parseInt(row.rounds_completed) || 0
+              };
+            }
+          });
+          
+          // Convert to array and sort by category name
+          resolve(Object.values(categoryLeaders).sort((a, b) => 
+            a.category_name.localeCompare(b.category_name)
+          ));
+        }
+      }
+    );
+  });
+};
+
 const close = () => {
   return new Promise((resolve, reject) => {
     if (db) {
@@ -1405,15 +1552,20 @@ const updateScreenshotOrder = (teamId, screenshotOrders) => {
 };
 
 // Get all teams for public projects page (excludes sensitive fields like team_leader_email)
+// Only returns published teams
 const getAllTeamsForProjects = () => {
   return new Promise((resolve, reject) => {
     // Exclude contact_email for public access - sensitive data should only be shown to team owners or admins
+    // Only show published teams
     db.all(
       `SELECT t.id, t.name, t.table_name, t.project_name, 
-              t.github_link, t.website_link, t.division, t.team_members, 
+              t.github_link, t.website_link, t.division, t.category_id,
+              c.name as category_name, t.team_members, 
               t.readme_content, t.banner_image, t.logo_image, t.screenshots, t.created_at, t.updated_at,
               (SELECT COUNT(*) FROM team_screenshots ts WHERE ts.team_id = t.id) as screenshot_count
        FROM teams t
+       LEFT JOIN categories c ON t.category_id = c.id
+       WHERE t.is_published = 1
        ORDER BY t.name`,
       [],
       (err, rows) => {
@@ -1813,6 +1965,11 @@ module.exports = {
   initializeChessBoardTables,
   getTables,
   getTableNames,
+  syncCategories,
+  getCategories,
+  getCategoryNames,
+  getCategoryById,
+  getCategoryByName,
   createTeam,
   syncTeams,
   getTeams,
@@ -1830,6 +1987,7 @@ module.exports = {
   setJudgingLocked,
   setWinners,
   getTeamsByDivisionWithScores,
+  getTopTeamPerCategory,
   isRoundLocked,
   getNextTeamForJudge,
   assignJudgeToTeam,

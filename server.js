@@ -96,6 +96,11 @@ app.use(async (req, res, next) => {
     res.locals.currentRound = req.session.currentRound || 1;
     res.locals.currentYear = new Date().getFullYear();
 
+    // Base URL for meta tags
+    const protocol = req.protocol;
+    const host = req.get('host');
+    res.locals.baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+
     try {
         const eventSettings = await db.getEventSettings();
         res.locals.eventSettings = eventSettings;
