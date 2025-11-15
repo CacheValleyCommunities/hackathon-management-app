@@ -24,23 +24,47 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
     
     // Get teams this judge has judged
     const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
+    const judgedTeamNames = new Set(judgedTeams.map(t => t.team_name));
+    
+    // Get current incomplete assignments (locked but not completed)
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(judgeEmail, round);
+    const currentAssignmentTeamNames = new Set(currentAssignments.map(a => a.team_name));
     
     // Get required judges per team from env (default to 2)
     const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+    
+    // Get judging locked status
+    const judgingLocked = eventSettings.judging_locked || false;
+    
+    // Determine which teams can be self-assigned by this judge
+    const queueStatsWithSelfAssign = await Promise.all(queueStats.map(async (team) => {
+      // Check if team is locked by another judge
+      const isLocked = await db.isTeamLocked(team.team_name, round);
+      
+      // Determine if this judge can self-assign this team
+      const canSelfAssign = !judgingLocked &&
+        !judgedTeamNames.has(team.team_name) &&  // Never judged
+        !currentAssignmentTeamNames.has(team.team_name) &&  // Not currently assigned
+        team.judge_count < requiredJudgesPerTeam &&  // Needs more judges
+        !isLocked;  // Not locked by another judge
+      
+      return {
+        ...team,
+        canSelfAssign
+      };
+    }));
     
     // Calculate summary stats
     const totalTeams = queueStats.length;
     const teamsNeedingJudges = queueStats.filter(t => t.judge_count < requiredJudgesPerTeam).length;
     const myTeamCount = judgedTeams.length;
-    
-    // Get judging locked status
-    const judgingLocked = eventSettings.judging_locked || false;
 
     res.render('scores/judge-queue', {
       title: 'Judge Queue',
       round,
-      queueStats,
+      queueStats: queueStatsWithSelfAssign,
       judgedTeams,
+      currentAssignments,
       totalTeams,
       teamsNeedingJudges,
       myTeamCount,
@@ -70,41 +94,156 @@ router.get('/next-team', requireJudge, async (req, res) => {
     const round = eventSettings.current_round || req.session.currentRound || 1;
     const judgeEmail = req.session.user.email;
 
-    // Get next available team for this judge
-    const nextTeam = await db.getNextTeamForJudge(judgeEmail, round);
+    // Check if judge already has an incomplete assignment
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(judgeEmail, round);
+    if (currentAssignments && currentAssignments.length > 0) {
+      // Redirect to the first incomplete assignment
+      const firstAssignment = currentAssignments[0];
+      return res.redirect(`/scores/enter/${encodeURIComponent(firstAssignment.team_name)}?round=${round}&auto=1`);
+    }
 
-    if (!nextTeam) {
-      // Get required judges per team from env (default to 2)
-      const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+    // Try to get and lock a team (with retries for race conditions)
+    let nextTeam = null;
+    let lockResult = null;
+    const maxRetries = 5;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Get next available team for this judge
+      nextTeam = await db.getNextTeamForJudge(judgeEmail, round);
+
+      if (!nextTeam) {
+        // Get required judges per team from env (default to 2)
+        const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+        
+        // Check if all teams have required judges or if judge has judged all available teams
+        const queueStats = await db.getJudgeQueueStats(round);
+        const allTeamsComplete = queueStats.every(t => t.judge_count >= requiredJudgesPerTeam);
+        
+        if (allTeamsComplete) {
+          return res.redirect('/scores/judge-queue?message=all_complete');
+        } else {
+          return res.redirect('/scores/judge-queue?message=no_more_for_you');
+        }
+      }
+
+      // Double-check: Verify this judge hasn't already judged this team
+      const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
+      const hasJudgedThisTeam = judgedTeams.some(t => t.team_name === nextTeam.name);
       
-      // Check if all teams have required judges or if judge has judged all available teams
-      const queueStats = await db.getJudgeQueueStats(round);
-      const allTeamsComplete = queueStats.every(t => t.judge_count >= requiredJudgesPerTeam);
+      if (hasJudgedThisTeam) {
+        console.error(`Error: Judge ${judgeEmail} was assigned to team ${nextTeam.name} they already judged!`);
+        // Try again with a different team
+        continue;
+      }
+
+      // Try to atomically lock the team
+      lockResult = await db.lockTeamForJudge(judgeEmail, nextTeam.name, round);
       
-      if (allTeamsComplete) {
-        return res.redirect('/scores/judge-queue?message=all_complete');
+      if (lockResult.success) {
+        // Successfully locked the team
+        break;
+      } else if (lockResult.reason === 'already_locked') {
+        // Team was locked by another judge, try again
+        if (attempt < maxRetries - 1) {
+          continue;
+        } else {
+          return res.redirect('/scores/judge-queue?error=assignment_failed');
+        }
       } else {
-        return res.redirect('/scores/judge-queue?message=no_more_for_you');
+        // Other error, try again
+        if (attempt < maxRetries - 1) {
+          continue;
+        } else {
+          return res.redirect('/scores/judge-queue?error=assignment_failed');
+        }
       }
     }
 
-    // Double-check: Verify this judge hasn't already judged this team
-    const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
-    const hasJudgedThisTeam = judgedTeams.some(t => t.team_name === nextTeam.name);
-    
-    if (hasJudgedThisTeam) {
-      console.error(`Error: Judge ${judgeEmail} was assigned to team ${nextTeam.name} they already judged!`);
-      // Get a different team
-      return res.redirect('/scores/judge-queue?error=duplicate_assignment');
+    if (!lockResult || !lockResult.success) {
+      return res.redirect('/scores/judge-queue?error=assignment_failed');
     }
-
-    // Assign judge to this team (INSERT OR IGNORE prevents duplicates)
-    await db.assignJudgeToTeam(judgeEmail, nextTeam.name, round);
 
     // Redirect to score this team
     res.redirect(`/scores/enter/${encodeURIComponent(nextTeam.name)}?round=${round}&auto=1`);
   } catch (error) {
     console.error('Error getting next team:', error);
+    res.redirect('/scores/judge-queue?error=assignment_failed');
+  }
+});
+
+// GET assign specific team - allows judge to self-assign a specific team
+router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings();
+    
+    // Check if judging is locked
+    if (eventSettings.judging_locked) {
+      return res.redirect('/scores/judge-queue?error=judging_locked');
+    }
+    
+    const round = eventSettings.current_round || req.session.currentRound || 1;
+    const judgeEmail = req.session.user.email;
+    const teamName = decodeURIComponent(req.params.teamName);
+    
+    // Get required judges per team from env (default to 2)
+    const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+    
+    // Check if judge already has an incomplete assignment
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(judgeEmail, round);
+    if (currentAssignments && currentAssignments.length > 0) {
+      // Check if this is the same team they're already assigned to
+      const isAlreadyAssigned = currentAssignments.some(a => a.team_name === teamName);
+      if (isAlreadyAssigned) {
+        // Redirect to score entry for this team
+        return res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?round=${round}&auto=1`);
+      } else {
+        // Judge has other incomplete assignments, redirect to queue with message
+        return res.redirect('/scores/judge-queue?error=incomplete_assignment');
+      }
+    }
+    
+    // Verify this judge hasn't already judged this team (ever)
+    const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
+    const hasJudgedThisTeam = judgedTeams.some(t => t.team_name === teamName);
+    
+    if (hasJudgedThisTeam) {
+      return res.redirect('/scores/judge-queue?error=already_judged');
+    }
+    
+    // Check if team exists and get its info
+    const queueStats = await db.getJudgeQueueStats(round);
+    const teamInfo = queueStats.find(t => t.team_name === teamName);
+    
+    if (!teamInfo) {
+      return res.redirect('/scores/judge-queue?error=team_not_found');
+    }
+    
+    // Check if team already has enough judges
+    if (teamInfo.judge_count >= requiredJudgesPerTeam) {
+      return res.redirect('/scores/judge-queue?error=team_complete');
+    }
+    
+    // Check if team is locked by another judge
+    const isLocked = await db.isTeamLocked(teamName, round);
+    if (isLocked) {
+      return res.redirect('/scores/judge-queue?error=team_locked');
+    }
+    
+    // Try to atomically lock the team
+    const lockResult = await db.lockTeamForJudge(judgeEmail, teamName, round);
+    
+    if (!lockResult.success) {
+      if (lockResult.reason === 'already_locked') {
+        return res.redirect('/scores/judge-queue?error=team_locked');
+      } else {
+        return res.redirect('/scores/judge-queue?error=assignment_failed');
+      }
+    }
+    
+    // Successfully locked the team, redirect to score entry
+    res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?round=${round}&auto=1`);
+  } catch (error) {
+    console.error('Error assigning team:', error);
     res.redirect('/scores/judge-queue?error=assignment_failed');
   }
 });
@@ -327,7 +466,8 @@ router.get('/my-scores', requireJudge, async (req, res) => {
       title: 'My Scores',
       scores,
       scoresByRound,
-      lockedRounds
+      lockedRounds,
+      query: req.query
     });
   } catch (error) {
     console.error('Error loading scores:', error);
@@ -404,6 +544,76 @@ router.get('/results/json', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error loading results JSON:', error);
     res.status(500).send('Error loading results');
+  }
+});
+
+// GET table map (for modal display)
+router.get('/table-map', requireJudge, async (req, res) => {
+  try {
+    const tables = await db.getTableNames();
+    const allTeams = await db.getTeams();
+
+    // Filter out sensitive data (contact_email) for non-admin users
+    const teams = allTeams.map(team => {
+      const teamData = { ...team };
+      // Only admins can see contact_email
+      if (req.session.user.role !== 'admin') {
+        delete teamData.contact_email;
+      }
+      return teamData;
+    });
+
+    // Create a map of table -> teams array for quick lookup (supports multiple teams per table)
+    const tableMap = {};
+    teams.forEach(team => {
+      if (!tableMap[team.table_name]) {
+        tableMap[team.table_name] = [];
+      }
+      tableMap[team.table_name].push(team);
+    });
+
+    // Generate grid structure dynamically from database tables
+    // Parse table names to extract letters and numbers
+    const lettersSet = new Set();
+    const numbersSet = new Set();
+
+    tables.forEach(tableName => {
+      // Match pattern: letters followed by numbers (e.g., A1, AB12, P10)
+      const match = tableName.match(/^([A-Z]+)(\d+)$/i);
+      if (match) {
+        lettersSet.add(match[1].toUpperCase());
+        numbersSet.add(parseInt(match[2]));
+      }
+    });
+
+    // Convert to sorted arrays
+    // Letters in reverse alphabetical order (P to A) for display from left to right
+    const letters = Array.from(lettersSet).sort().reverse();
+    // Numbers in descending order (10 to 1) for display from top to bottom
+    const numbers = Array.from(numbersSet).sort((a, b) => b - a);
+
+    const gridRows = [];
+
+    numbers.forEach(num => {
+      const row = [];
+      letters.forEach(letter => {
+        const tableId = `${letter}${num}`;
+        row.push({
+          id: tableId,
+          teams: tableMap[tableId] || []
+        });
+      });
+      gridRows.push(row);
+    });
+
+    // Render just the table map section
+    res.render('partials/table-map', {
+      gridRows,
+      layout: false
+    });
+  } catch (error) {
+    console.error('Error loading table map:', error);
+    res.status(500).send('<div class="text-center text-red-500 p-4">Error loading table map. Please try again.</div>');
   }
 });
 

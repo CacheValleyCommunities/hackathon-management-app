@@ -32,6 +32,7 @@ module.exports = {
   and: (a, b) => a && b,
   or: (a, b) => a || b,
   gt: (a, b) => a > b,
+  lt: (a, b) => a < b,
   size: (obj) => {
     if (!obj) return 0;
     if (Array.isArray(obj)) return obj.length;

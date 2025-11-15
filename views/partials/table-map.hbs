@@ -1,0 +1,50 @@
+<div class="border border-gray-200 rounded-lg p-6">
+    <!-- Table Grid -->
+    <div class="overflow-x-auto -mx-6 px-6">
+        <div class="inline-block min-w-full">
+            <table class="mx-auto border-collapse" style="table-layout: fixed;">
+                <tbody>
+                    {{#each gridRows}}
+                    <tr>
+                        {{#each this}}
+                        <td class="border border-gray-300 text-center relative group {{#if (gt teams.length 0)}}bg-gray-900 text-white font-bold{{else}}bg-gray-50 text-gray-400{{/if}}"
+                            style="width: 40px; height: 40px; min-width: 40px; font-size: 10px;">
+                            <div class="text-[10px] sm:text-xs font-bold mb-0.5 leading-tight">{{id}}</div>
+                            {{#if (gt teams.length 0)}}
+                            <div class="text-[8px] sm:text-[9px] leading-tight px-0.5 sm:px-1 space-y-0.5"
+                                title="{{#each teams}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}">
+                                {{#each teams}}
+                                {{#if (lt @index 2)}}
+                                <div class="truncate">{{this.name}}</div>
+                                {{/if}}
+                                {{/each}}
+                                {{#if (gt teams.length 2)}}
+                                <div class="text-[7px] opacity-75">+{{subtract teams.length 2}}</div>
+                                {{/if}}
+                            </div>
+                            {{/if}}
+                        </td>
+                        {{/each}}
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="bg-gray-900 text-white font-bold text-center py-6 rounded-lg mt-6 text-xl">
+        STAGE
+    </div>
+
+    <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-8 text-sm">
+        <div class="flex items-center gap-2">
+            <div class="w-5 h-5 bg-gray-900 border border-gray-300 rounded flex-shrink-0"></div>
+            <span class="text-gray-700 font-medium">Occupied</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-5 h-5 bg-gray-50 border border-gray-300 rounded flex-shrink-0"></div>
+            <span class="text-gray-700 font-medium">Available</span>
+        </div>
+    </div>
+</div>
+

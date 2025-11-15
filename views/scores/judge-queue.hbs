@@ -7,9 +7,15 @@
                     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Judge Queue</h1>
                     <p class="text-sm text-gray-500 mt-2">Round {{round}} • Find your next team to judge</p>
                 </div>
-                <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
-                    ← Back to Home
-                </a>
+                <div class="flex items-center gap-3">
+                    <button onclick="document.getElementById('table-map-modal').classList.remove('hidden')"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg transition hover:bg-gray-50">
+                        View Table Map
+                    </button>
+                    <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                        ← Back to Home
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -73,6 +79,74 @@
             </div>
         </div>
         {{/if}}
+        {{#if (eq (lookup query 'error') 'incomplete_assignment')}}
+        <div class="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p class="text-yellow-800">Please complete your current assignments before selecting a new team.</p>
+        </div>
+        {{/if}}
+        {{#if (eq (lookup query 'error') 'already_judged')}}
+        <div class="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p class="text-yellow-800">You have already judged this team. Please select a different team.</p>
+        </div>
+        {{/if}}
+        {{#if (eq (lookup query 'error') 'team_not_found')}}
+        <div class="mb-8 bg-red-50 border border-red-200 rounded-lg p-4">
+            <p class="text-red-800">Team not found. Please try again.</p>
+        </div>
+        {{/if}}
+        {{#if (eq (lookup query 'error') 'team_complete')}}
+        <div class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-blue-800">This team already has enough judges. Please select a different team.</p>
+        </div>
+        {{/if}}
+        {{#if (eq (lookup query 'error') 'team_locked')}}
+        <div class="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p class="text-yellow-800">This team is currently being judged by another judge. Please select a different team.</p>
+        </div>
+        {{/if}}
+
+        <!-- My Current Assignments -->
+        {{#if currentAssignments.length}}
+        <div class="mb-12 pb-8 border-b border-gray-200">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">My Current Assignments</h2>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+                <div class="flex items-start gap-4">
+                    <svg class="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-yellow-900 mb-2">You have incomplete assignments</h3>
+                        <p class="text-yellow-800 mb-4">Please complete your current assignments before requesting new teams.</p>
+                        <div class="space-y-3">
+                            {{#each currentAssignments}}
+                            <div class="bg-white rounded-lg p-4 border border-yellow-300">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <div class="font-semibold text-gray-900">{{this.team_name}}</div>
+                                        <div class="text-sm text-gray-600">Table {{this.table_name}} 
+                                            {{#if this.division}}• {{this.division}}{{/if}}
+                                        </div>
+                                        <div class="text-xs text-gray-500 mt-1">Assigned: {{this.locked_at}}</div>
+                                    </div>
+                                    <a href="/scores/enter/{{encodeURIComponent this.team_name}}?round={{this.round}}"
+                                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium text-sm transition">
+                                        Continue Judging
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                        </svg>
+                                    </a>
+                                </div>
+                            </div>
+                            {{/each}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {{/if}}
 
         <!-- Next Team Button -->
         <div class="mb-12 pb-8 border-b border-gray-200">
@@ -87,7 +161,8 @@
                     You'll never be assigned to a team you've already judged.
                 </p>
                 <a href="/scores/next-team"
-                    class="inline-flex items-center gap-3 px-8 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition">
+                    class="inline-flex items-center gap-3 px-8 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition {{#if currentAssignments.length}}opacity-50 cursor-not-allowed{{/if}}"
+                    {{#if currentAssignments.length}}onclick="return false;" title="Please complete your current assignments first"{{/if}}>
                     Get Next Team
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -103,6 +178,7 @@
         <!-- Queue Status -->
         <div class="mb-12">
             <h2 class="text-2xl font-bold text-gray-900 mb-6">Queue Status</h2>
+            <p class="text-sm text-gray-600 mb-4">Click on a team row to assign yourself to judge it (if available).</p>
             <div class="border border-gray-200 rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full">
@@ -127,12 +203,25 @@
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             {{#each queueStats}}
-                            <tr class="hover:bg-gray-50 transition">
+                            <tr 
+                                class="transition {{#if this.canSelfAssign}}cursor-pointer hover:bg-blue-50 hover:border-blue-200{{else}}hover:bg-gray-50{{/if}}"
+                                {{#if this.canSelfAssign}}
+                                onclick="window.location.href='/scores/assign-team/{{encodeURIComponent this.team_name}}'"
+                                {{/if}}
+                            >
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="font-semibold text-gray-900">{{this.team_name}}</div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="font-semibold {{#if this.canSelfAssign}}text-gray-900{{else}}text-gray-500{{/if}}">{{this.team_name}}</div>
+                                        {{#if this.canSelfAssign}}
+                                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        <span class="text-xs text-blue-600 font-medium">Click to assign</span>
+                                        {{/if}}
+                                    </div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{this.table_name}}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm {{#if this.canSelfAssign}}text-gray-900{{else}}text-gray-500{{/if}}">{{this.table_name}}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm {{#if this.canSelfAssign}}text-gray-900{{else}}text-gray-500{{/if}}">
                                     {{#if this.division}}{{this.division}}{{else}}<span
                                         class="text-gray-400">—</span>{{/if}}
                                 </td>
@@ -185,4 +274,71 @@
         </div>
         {{/if}}
     </div>
+
+    <!-- Table Map Modal -->
+    <div id="table-map-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+        onclick="if(event.target === this) document.getElementById('table-map-modal').classList.add('hidden')">
+        <div class="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+            onclick="event.stopPropagation()">
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+                <h2 class="text-2xl font-bold text-gray-900">Event Floor Map</h2>
+                <button onclick="document.getElementById('table-map-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6" id="table-map-content">
+                <div class="text-center text-gray-500">Loading table map...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load table map when modal is opened
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('table-map-modal');
+            const content = document.getElementById('table-map-content');
+            let loaded = false;
+
+            // Function to load table map
+            function loadTableMap() {
+                if (!loaded) {
+                    fetch('/scores/table-map')
+                        .then(response => response.text())
+                        .then(html => {
+                            content.innerHTML = html;
+                            loaded = true;
+                        })
+                        .catch(error => {
+                            content.innerHTML = '<div class="text-center text-red-500 p-4">Error loading table map. Please try again.</div>';
+                        });
+                }
+            }
+
+            // Watch for modal visibility changes
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                        if (!modal.classList.contains('hidden')) {
+                            loadTableMap();
+                        }
+                    }
+                });
+            });
+
+            observer.observe(modal, {
+                attributes: true,
+                attributeFilter: ['class']
+            });
+
+            // Also load on button click (in case observer doesn't fire)
+            document.querySelectorAll('button[onclick*="table-map-modal"]').forEach(button => {
+                button.addEventListener('click', function() {
+                    setTimeout(loadTableMap, 100);
+                });
+            });
+        });
+    </script>
 </div>

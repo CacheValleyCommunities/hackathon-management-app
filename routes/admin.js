@@ -436,16 +436,23 @@ router.post('/judges/add', requireAdmin, async (req, res) => {
     const existingUser = await db.getUserByEmail(email.toLowerCase().trim());
 
     if (existingUser) {
-      // Update existing user
+      // Update existing user - also set all policies as accepted when updating from admin panel
       await db.updateUser(email.toLowerCase().trim(), {
         name: name || existingUser.name,
         role: selectedRole,
-        team_id: linkedTeamId
+        team_id: linkedTeamId,
+        privacy_policy_accepted: 1,
+        terms_accepted: 1,
+        acceptable_use_accepted: 1,
+        policies_accepted_at: new Date().toISOString(),
+        email_preferences: 1,
+        is_under_18: 0,
+        guardian_email: null
       });
       return res.render('admin/add-judge', {
         title: 'Add User',
         error: null,
-        success: `User ${email} already exists. Updated role to ${selectedRole}${linkedTeamId ? ' and linked to team' : ''}.`,
+        success: `User ${email} already exists. Updated role to ${selectedRole}${linkedTeamId ? ' and linked to team' : ''}. All policies have been accepted.`,
         teams
       });
     }
@@ -508,8 +515,16 @@ router.post('/judges/:email/update', requireAdmin, async (req, res) => {
     const email = decodeURIComponent(req.params.email);
     const { role } = req.body;
 
+    // When updating from admin panel, also ensure all policies are accepted
     await db.updateUser(email, {
-      role: role || 'judge'
+      role: role || 'judge',
+      privacy_policy_accepted: 1,
+      terms_accepted: 1,
+      acceptable_use_accepted: 1,
+      policies_accepted_at: new Date().toISOString(),
+      email_preferences: 1,
+      is_under_18: 0,
+      guardian_email: null
     });
 
     res.redirect('/admin?success=judge_updated');
@@ -1071,8 +1086,28 @@ router.post('/judges/import/process', requireAdmin, async (req, res) => {
         const existingUser = await db.getUserByEmail(email);
         const isNewUser = !existingUser;
 
-        // Get or create user (will create if doesn't exist)
-        await db.getOrCreateUser(email, name, role);
+        // Policy data - all policies accepted when created from admin panel
+        const policyData = {
+          privacy_policy_accepted: 1,
+          terms_accepted: 1,
+          acceptable_use_accepted: 1,
+          policies_accepted_at: new Date().toISOString(),
+          email_preferences: 1,
+          is_under_18: 0,
+          guardian_email: null
+        };
+
+        if (existingUser) {
+          // Update existing user with policies accepted
+          await db.updateUser(email, {
+            name: name || existingUser.name,
+            role: role,
+            ...policyData
+          });
+        } else {
+          // Create new user with policies accepted
+          await db.createUser(email, name, role, null, policyData);
+        }
 
         // If team field is mapped, try to assign team
         if (teamId) {
@@ -1194,9 +1229,18 @@ router.post('/volunteers/:id/status', requireAdmin, async (req, res) => {
         if (existingUser) {
           // User already exists, link to existing user
           userId = existingUser.id;
-          // Update role to judge if not already admin
+          // Update role to judge if not already admin, and set all policies as accepted
           if (existingUser.role !== 'admin') {
-            await db.updateUser(volunteer.email, { role: 'judge' });
+            await db.updateUser(volunteer.email, {
+              role: 'judge',
+              privacy_policy_accepted: 1,
+              terms_accepted: 1,
+              acceptable_use_accepted: 1,
+              policies_accepted_at: new Date().toISOString(),
+              email_preferences: 1,
+              is_under_18: 0,
+              guardian_email: null
+            });
           }
         } else {
           // Create new user account

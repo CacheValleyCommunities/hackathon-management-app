@@ -17,25 +17,39 @@
     <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Filters -->
         <div class="mb-8">
-            <div class="flex flex-col sm:flex-row gap-4">
-                {{#if divisions.length}}
-                <!-- Division Filter -->
-                <div class="flex-1">
-                    <form action="/scores/select-team" method="GET" class="flex items-center gap-3">
-                        <input type="hidden" name="round" value="{{round}}">
-                        <label for="division"
-                            class="text-sm font-medium text-gray-700 whitespace-nowrap">Division:</label>
-                        <select id="division" name="division" onchange="this.form.submit()"
-                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
-                            <option value="">All Divisions</option>
-                            {{#each divisions}}
-                            <option value="{{this}}" {{#if (eq this ../selectedDivision)}}selected{{/if}}>{{this}}
-                            </option>
-                            {{/each}}
-                        </select>
-                    </form>
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-col sm:flex-row gap-4">
+                    {{#if divisions.length}}
+                    <!-- Division Filter -->
+                    <div class="flex-1">
+                        <form action="/scores/select-team" method="GET" class="flex items-center gap-3" id="division-form">
+                            <input type="hidden" name="round" value="{{round}}">
+                            <input type="hidden" name="search" value="{{query.search}}">
+                            <label for="division"
+                                class="text-sm font-medium text-gray-700 whitespace-nowrap">Division:</label>
+                            <select id="division" name="division" onchange="this.form.submit()"
+                                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
+                                <option value="">All Divisions</option>
+                                {{#each divisions}}
+                                <option value="{{this}}" {{#if (eq this ../selectedDivision)}}selected{{/if}}>{{this}}
+                                </option>
+                                {{/each}}
+                            </select>
+                        </form>
+                    </div>
+                    {{/if}}
                 </div>
-                {{/if}}
+                <!-- Search Bar -->
+                <div class="relative">
+                    <input type="text" id="search-input" placeholder="Search by team name, table, division, or project..."
+                        class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                        value="{{query.search}}">
+                    <svg class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
             </div>
         </div>
 
@@ -64,8 +78,9 @@
 
         <!-- Teams Grid -->
         {{#if teams.length}}
+        <div id="teams-container">
         {{#each teamsByDivision}}
-        <div class="mb-12">
+        <div class="mb-12" data-division="{{@key}}">
             <!-- Division Header -->
             <div class="mb-6">
                 <h2 class="text-2xl font-bold text-gray-900 tracking-tight">{{@key}}</h2>
@@ -76,7 +91,8 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {{#each this}}
                 <div
-                    class="border-2 {{#if (contains ../../scoredTeams this.name)}}border-green-300 bg-green-50{{else}}border-gray-200 bg-white{{/if}} rounded-lg p-6 hover:shadow-md transition">
+                    class="border-2 {{#if (contains ../../scoredTeams this.name)}}border-green-300 bg-green-50{{else}}border-gray-200 bg-white{{/if}} rounded-lg p-6 hover:shadow-md transition team-card"
+                    data-search-text="{{this.name}} {{this.table_name}} {{#if this.division}}{{this.division}}{{/if}} {{#if this.project_name}}{{this.project_name}}{{/if}}">
                     <!-- Team Name -->
                     <div class="flex items-start justify-between mb-3">
                         <h3 class="text-lg font-semibold text-gray-900 leading-tight">{{this.name}}</h3>
@@ -138,6 +154,61 @@
             </div>
         </div>
         {{/each}}
+        </div>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const searchInput = document.getElementById('search-input');
+                const teamsContainer = document.getElementById('teams-container');
+                const divisionForm = document.getElementById('division-form');
+                const allTeamCards = teamsContainer ? teamsContainer.querySelectorAll('.team-card') : [];
+
+                function filterTeams() {
+                    const searchTerm = searchInput.value.toLowerCase().trim();
+                    
+                    allTeamCards.forEach(card => {
+                        const searchText = card.getAttribute('data-search-text').toLowerCase();
+                        const divisionDiv = card.closest('[data-division]');
+                        
+                        if (searchTerm === '' || searchText.includes(searchTerm)) {
+                            card.style.display = '';
+                            if (divisionDiv) {
+                                divisionDiv.style.display = '';
+                            }
+                        } else {
+                            card.style.display = 'none';
+                            // Hide division header if no visible items in that division
+                            if (divisionDiv) {
+                                const visibleCards = divisionDiv.querySelectorAll('.team-card:not([style*="display: none"])');
+                                if (visibleCards.length === 0) {
+                                    divisionDiv.style.display = 'none';
+                                }
+                            }
+                        }
+                    });
+                }
+
+                function updateSearchInForm() {
+                    if (divisionForm) {
+                        const searchInput = document.getElementById('search-input');
+                        const hiddenSearchInput = divisionForm.querySelector('input[name="search"]');
+                        if (hiddenSearchInput) {
+                            hiddenSearchInput.value = searchInput.value;
+                        }
+                    }
+                }
+
+                searchInput.addEventListener('input', function() {
+                    filterTeams();
+                    updateSearchInForm();
+                });
+                
+                // Initial filter if there's a search query in URL
+                if (searchInput.value) {
+                    filterTeams();
+                }
+            });
+        </script>
         {{else}}
         <div class="text-center py-16">
             <p class="text-gray-500 text-lg">No teams found{{#if selectedDivision}} in {{selectedDivision}}

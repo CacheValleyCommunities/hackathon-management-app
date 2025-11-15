@@ -53,13 +53,20 @@
                                 {{#each gridRows}}
                                 <tr>
                                     {{#each this}}
-                                    <td class="border border-gray-300 text-center relative group {{#if team}}bg-gray-900 text-white font-bold{{else}}bg-gray-50 text-gray-400{{/if}}"
+                                    <td class="border border-gray-300 text-center relative group {{#if (gt teams.length 0)}}bg-gray-900 text-white font-bold{{else}}bg-gray-50 text-gray-400{{/if}}"
                                         style="width: 40px; height: 40px; min-width: 40px; font-size: 10px;">
                                         <div class="text-[10px] sm:text-xs font-bold mb-0.5 leading-tight">{{id}}</div>
-                                        {{#if team}}
-                                        <div class="text-[8px] sm:text-[9px] leading-tight truncate px-0.5 sm:px-1"
-                                            title="{{team.name}}">
-                                            {{team.name}}
+                                        {{#if (gt teams.length 0)}}
+                                        <div class="text-[8px] sm:text-[9px] leading-tight px-0.5 sm:px-1 space-y-0.5"
+                                            title="{{#each teams}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}">
+                                            {{#each teams}}
+                                            {{#if (lt @index 2)}}
+                                            <div class="truncate">{{this.name}}</div>
+                                            {{/if}}
+                                            {{/each}}
+                                            {{#if (gt teams.length 2)}}
+                                            <div class="text-[7px] opacity-75">+{{subtract teams.length 2}}</div>
+                                            {{/if}}
                                         </div>
                                         {{/if}}
                                     </td>

@@ -297,11 +297,14 @@ const createTables = () => {
         round INTEGER NOT NULL,
         assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed BOOLEAN DEFAULT 0,
+        locked_at DATETIME,
         UNIQUE(judge_email, team_name, round)
       )`, (err) => {
         if (err) {
           console.error('Error creating judge_team_assignments table:', err);
         }
+        // Add locked_at column if it doesn't exist (migration)
+        db.run(`ALTER TABLE judge_team_assignments ADD COLUMN locked_at DATETIME`, () => { });
       });
 
       // Event settings table
@@ -1390,15 +1393,17 @@ const getNextTeamForJudge = (judgeEmail, round) => {
 
           // Get how many judges each team has for the current round
           // Also check which teams this judge is already assigned to in this round
+          // And which teams are currently locked
           db.all(
             `SELECT 
               team_name, 
               COUNT(*) as judge_count,
-              SUM(CASE WHEN judge_email = ? THEN 1 ELSE 0 END) as already_assigned
+              SUM(CASE WHEN judge_email = ? THEN 1 ELSE 0 END) as already_assigned,
+              SUM(CASE WHEN completed = 0 AND locked_at IS NOT NULL AND judge_email != ? THEN 1 ELSE 0 END) as is_locked
              FROM judge_team_assignments 
              WHERE round = ? 
              GROUP BY team_name`,
-            [judgeEmail, round],
+            [judgeEmail, judgeEmail, round],
             (err, teamCounts) => {
               if (err) {
                 reject(err);
@@ -1407,51 +1412,85 @@ const getNextTeamForJudge = (judgeEmail, round) => {
 
               const teamCountMap = {};
               const alreadyAssignedSet = new Set();
+              const lockedTeamsSet = new Set();
               teamCounts.forEach(tc => {
                 teamCountMap[tc.team_name] = tc.judge_count;
                 if (tc.already_assigned > 0) {
                   alreadyAssignedSet.add(tc.team_name);
+                }
+                if (tc.is_locked > 0) {
+                  lockedTeamsSet.add(tc.team_name);
                 }
               });
 
               // Get required judges per team from env (default to 2)
               const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
 
-              // Filter teams the judge hasn't judged yet AND isn't already assigned to in this round
-              // AND that still need more judges
-              const availableTeams = teams
-                .filter(t => {
-                  // Must not have judged this team ever
-                  if (judgedTeamNames.has(t.name)) return false;
-                  // Must not already be assigned to this team in current round
-                  if (alreadyAssignedSet.has(t.name)) return false;
-                  // Must still need more judges (prevent over-assignment)
-                  const currentJudgeCount = teamCountMap[t.name] || 0;
-                  if (currentJudgeCount >= requiredJudgesPerTeam) return false;
-                  return true;
-                })
-                .map(t => ({
-                  name: t.name,
-                  table_name: t.table_name,
-                  division: t.division,
-                  judge_count: teamCountMap[t.name] || 0
-                }))
-                .sort((a, b) => {
-                  // First priority: teams with fewer judges
-                  if (a.judge_count !== b.judge_count) {
-                    return a.judge_count - b.judge_count;
+              // Get last assignment times for round-robin ordering
+              db.all(
+                `SELECT team_name, MAX(assigned_at) as last_assigned
+                 FROM judge_team_assignments
+                 WHERE round = ? AND completed = 1
+                 GROUP BY team_name`,
+                [round],
+                (err, lastAssignments) => {
+                  if (err) {
+                    reject(err);
+                    return;
                   }
-                  // Second priority: alphabetical by name
-                  return a.name.localeCompare(b.name);
-                });
 
-              if (availableTeams.length === 0) {
-                resolve(null); // No available teams for this judge
-                return;
-              }
+                  const lastAssignedMap = {};
+                  lastAssignments.forEach(la => {
+                    lastAssignedMap[la.team_name] = la.last_assigned || '';
+                  });
 
-              // Return the team with the fewest judges
-              resolve(availableTeams[0]);
+                  // Filter teams the judge hasn't judged yet AND isn't already assigned to in this round
+                  // AND that still need more judges AND are not currently locked
+                  const availableTeams = teams
+                    .filter(t => {
+                      // Must not have judged this team ever
+                      if (judgedTeamNames.has(t.name)) return false;
+                      // Must not already be assigned to this team in current round
+                      if (alreadyAssignedSet.has(t.name)) return false;
+                      // Must not be locked by another judge
+                      if (lockedTeamsSet.has(t.name)) return false;
+                      // Must still need more judges (prevent over-assignment)
+                      const currentJudgeCount = teamCountMap[t.name] || 0;
+                      if (currentJudgeCount >= requiredJudgesPerTeam) return false;
+                      return true;
+                    })
+                    .map(t => ({
+                      name: t.name,
+                      table_name: t.table_name,
+                      division: t.division,
+                      judge_count: teamCountMap[t.name] || 0,
+                      last_assigned: lastAssignedMap[t.name] || ''
+                    }))
+                    .sort((a, b) => {
+                      // First priority: teams with fewer judges
+                      if (a.judge_count !== b.judge_count) {
+                        return a.judge_count - b.judge_count;
+                      }
+                      // Second priority: round-robin - teams that haven't been assigned recently
+                      // (for teams with same judge count, prefer ones not assigned recently)
+                      if (a.last_assigned !== b.last_assigned) {
+                        if (!a.last_assigned) return -1; // Never assigned gets priority
+                        if (!b.last_assigned) return 1;
+                        return a.last_assigned.localeCompare(b.last_assigned);
+                      }
+                      // Third priority: alphabetical by name
+                      return a.name.localeCompare(b.name);
+                    });
+
+                  if (availableTeams.length === 0) {
+                    resolve(null); // No available teams for this judge
+                    return;
+                  }
+
+                  // Return the team with the fewest judges (round-robin style)
+                  resolve(availableTeams[0]);
+                }
+              );
             }
           );
         }
@@ -1461,11 +1500,12 @@ const getNextTeamForJudge = (judgeEmail, round) => {
 };
 
 // Assign a judge to a team
+// Note: For atomic locking, use lockTeamForJudge() instead
 const assignJudgeToTeam = (judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT OR IGNORE INTO judge_team_assignments (judge_email, team_name, round, completed) 
-       VALUES (?, ?, ?, 0)`,
+      `INSERT OR IGNORE INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) 
+       VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)`,
       [judgeEmail, teamName, round],
       function (err) {
         if (err) reject(err);
@@ -1529,6 +1569,139 @@ const getJudgedTeamsByJudge = (judgeEmail) => {
         else resolve(rows);
       }
     );
+  });
+};
+
+// Get current incomplete assignments (locked but not completed) for a judge
+const getCurrentAssignmentsForJudge = (judgeEmail, round) => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT jta.team_name, jta.round, jta.locked_at, t.table_name, t.division 
+       FROM judge_team_assignments jta
+       LEFT JOIN teams t ON jta.team_name = t.name
+       WHERE jta.judge_email = ? 
+         AND jta.round = ?
+         AND jta.completed = 0
+         AND jta.locked_at IS NOT NULL
+       ORDER BY jta.locked_at DESC`,
+      [judgeEmail, round],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
+  });
+};
+
+// Check if a team is currently locked by any judge
+const isTeamLocked = (teamName, round) => {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT judge_email, locked_at 
+       FROM judge_team_assignments 
+       WHERE team_name = ? 
+         AND round = ? 
+         AND completed = 0 
+         AND locked_at IS NOT NULL
+       LIMIT 1`,
+      [teamName, round],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(!!row); // Return true if locked, false if not
+      }
+    );
+  });
+};
+
+// Atomically lock a team for a judge
+// Uses a transaction to prevent race conditions
+const lockTeamForJudge = (judgeEmail, teamName, round) => {
+  return new Promise((resolve, reject) => {
+    // Use a transaction to ensure atomicity
+    db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+      if (beginErr) {
+        reject(beginErr);
+        return;
+      }
+
+      // Check if team is already locked by another judge
+      db.get(
+        `SELECT judge_email 
+         FROM judge_team_assignments 
+         WHERE team_name = ? 
+           AND round = ? 
+           AND completed = 0 
+           AND locked_at IS NOT NULL
+           AND judge_email != ?
+         LIMIT 1`,
+        [teamName, round, judgeEmail],
+        (err, existingLock) => {
+          if (err) {
+            db.run('ROLLBACK', () => { });
+            reject(err);
+            return;
+          }
+
+          if (existingLock) {
+            // Team is locked by another judge
+            db.run('ROLLBACK', () => { });
+            resolve({ success: false, reason: 'already_locked' });
+            return;
+          }
+
+          // Try to insert or update the assignment with lock
+          db.run(
+            `INSERT INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) 
+             VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+             ON CONFLICT(judge_email, team_name, round) 
+             DO UPDATE SET locked_at = CURRENT_TIMESTAMP 
+             WHERE completed = 0 AND locked_at IS NULL`,
+            [judgeEmail, teamName, round],
+            function (err) {
+              if (err) {
+                db.run('ROLLBACK', () => { });
+                reject(err);
+                return;
+              }
+
+              // Verify the lock was set (check if this judge now has the lock)
+              db.get(
+                `SELECT locked_at, id
+                 FROM judge_team_assignments 
+                 WHERE judge_email = ? 
+                   AND team_name = ? 
+                   AND round = ? 
+                   AND completed = 0 
+                   AND locked_at IS NOT NULL`,
+                [judgeEmail, teamName, round],
+                (err, lockCheck) => {
+                  if (err) {
+                    db.run('ROLLBACK', () => { });
+                    reject(err);
+                    return;
+                  }
+
+                  db.run('COMMIT', (commitErr) => {
+                    if (commitErr) {
+                      db.run('ROLLBACK', () => { });
+                      reject(commitErr);
+                      return;
+                    }
+
+                    if (lockCheck) {
+                      resolve({ success: true, id: lockCheck.id });
+                    } else {
+                      // Lock was not set (possibly due to race condition)
+                      resolve({ success: false, reason: 'lock_failed' });
+                    }
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
+    });
   });
 };
 
@@ -2070,6 +2243,9 @@ module.exports = {
   markAssignmentCompleted,
   getJudgeQueueStats,
   getJudgedTeamsByJudge,
+  getCurrentAssignmentsForJudge,
+  isTeamLocked,
+  lockTeamForJudge,
   // Screenshot management
   addTeamScreenshot,
   getTeamScreenshots,

@@ -61,12 +61,16 @@ describe('Judge Queue System', () => {
             judge_email TEXT NOT NULL,
             team_name TEXT NOT NULL,
             round INTEGER NOT NULL,
+            assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             completed INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            locked_at DATETIME,
             UNIQUE(judge_email, team_name, round)
           )
         `, (err) => {
                     if (err) reject(err);
+                    // Add locked_at column if it doesn't exist (migration)
+                    testDb.run(`ALTER TABLE judge_team_assignments ADD COLUMN locked_at DATETIME`, () => { });
+                    testDb.run(`ALTER TABLE judge_team_assignments ADD COLUMN assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP`, () => { });
                 });
 
                 // Scores table
@@ -282,7 +286,7 @@ describe('Judge Queue System', () => {
     const assignJudgeToTeam = async (judgeEmail, teamName, round) => {
         return new Promise((resolve, reject) => {
             testDb.run(
-                'INSERT OR IGNORE INTO judge_team_assignments (judge_email, team_name, round, completed) VALUES (?, ?, ?, 0)',
+                'INSERT OR IGNORE INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)',
                 [judgeEmail, teamName, round],
                 function (err) {
                     if (err) reject(err);
@@ -730,6 +734,855 @@ describe('Judge Queue System', () => {
                 // Since they've judged all teams in round 1, they can't judge any in round 2
                 expect(nextTeam).toBeNull();
             }
+        });
+    });
+
+    describe('Locking System', () => {
+        // Helper function to lock team for judge using test database
+        const lockTeamForJudgeTestDb = (judgeEmail, teamName, round) => {
+            return new Promise((resolve, reject) => {
+                testDb.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+                    if (beginErr) {
+                        reject(beginErr);
+                        return;
+                    }
+
+                    testDb.get(
+                        `SELECT judge_email 
+                         FROM judge_team_assignments 
+                         WHERE team_name = ? 
+                           AND round = ? 
+                           AND completed = 0 
+                           AND locked_at IS NOT NULL
+                           AND judge_email != ?
+                         LIMIT 1`,
+                        [teamName, round, judgeEmail],
+                        (err, existingLock) => {
+                            if (err) {
+                                testDb.run('ROLLBACK', () => { });
+                                reject(err);
+                                return;
+                            }
+
+                            if (existingLock) {
+                                testDb.run('ROLLBACK', () => { });
+                                resolve({ success: false, reason: 'already_locked' });
+                                return;
+                            }
+
+                            testDb.run(
+                                `INSERT INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) 
+                                 VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+                                 ON CONFLICT(judge_email, team_name, round) 
+                                 DO UPDATE SET locked_at = CURRENT_TIMESTAMP 
+                                 WHERE completed = 0 AND locked_at IS NULL`,
+                                [judgeEmail, teamName, round],
+                                function (err) {
+                                    if (err) {
+                                        testDb.run('ROLLBACK', () => { });
+                                        reject(err);
+                                        return;
+                                    }
+
+                                    testDb.get(
+                                        `SELECT locked_at, id
+                                         FROM judge_team_assignments 
+                                         WHERE judge_email = ? 
+                                           AND team_name = ? 
+                                           AND round = ? 
+                                           AND completed = 0 
+                                           AND locked_at IS NOT NULL`,
+                                        [judgeEmail, teamName, round],
+                                        (err, lockCheck) => {
+                                            if (err) {
+                                                testDb.run('ROLLBACK', () => { });
+                                                reject(err);
+                                                return;
+                                            }
+
+                                            testDb.run('COMMIT', (commitErr) => {
+                                                if (commitErr) {
+                                                    testDb.run('ROLLBACK', () => { });
+                                                    reject(commitErr);
+                                                    return;
+                                                }
+
+                                                if (lockCheck) {
+                                                    resolve({ success: true, id: lockCheck.id });
+                                                } else {
+                                                    resolve({ success: false, reason: 'lock_failed' });
+                                                }
+                                            });
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    );
+                });
+            });
+        };
+
+        // Helper function to check if team is locked using test database
+        const isTeamLockedTestDb = (teamName, round) => {
+            return new Promise((resolve, reject) => {
+                testDb.get(
+                    `SELECT judge_email, locked_at 
+                     FROM judge_team_assignments 
+                     WHERE team_name = ? 
+                       AND round = ? 
+                       AND completed = 0 
+                       AND locked_at IS NOT NULL
+                     LIMIT 1`,
+                    [teamName, round],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(!!row);
+                    }
+                );
+            });
+        };
+
+        // Helper function to get current assignments for a judge using test database
+        const getCurrentAssignmentsForJudgeTestDb = (judgeEmail, round) => {
+            return new Promise((resolve, reject) => {
+                testDb.all(
+                    `SELECT jta.team_name, jta.round, jta.locked_at, t.table_name, t.division 
+                     FROM judge_team_assignments jta
+                     LEFT JOIN teams t ON jta.team_name = t.name
+                     WHERE jta.judge_email = ? 
+                       AND jta.round = ?
+                       AND jta.completed = 0
+                       AND jta.locked_at IS NOT NULL
+                     ORDER BY jta.locked_at DESC`,
+                    [judgeEmail, round],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
+            });
+        };
+
+        test('should exclude locked teams from assignment', async () => {
+            const teams = await createTestTeams(3);
+            const judges = await createTestJudges(2);
+            const round = 1;
+
+            // Lock team 1 for judge 1
+            await new Promise((resolve, reject) => {
+                testDb.run(
+                    'INSERT INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)',
+                    [judges[0].email, teams[0].name, round],
+                    (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    }
+                );
+            });
+
+            // Judge 2 should not get team 1 (it's locked)
+            const nextTeam = await getNextTeamForJudge(judges[1].email, round);
+            expect(nextTeam).not.toBeNull();
+            expect(nextTeam.name).not.toBe(teams[0].name);
+        });
+
+        test('should allow judge to see their own locked assignment', async () => {
+            const teams = await createTestTeams(2);
+            const judges = await createTestJudges(1);
+            const round = 1;
+
+            // Lock team 1 for judge 1
+            await new Promise((resolve, reject) => {
+                testDb.run(
+                    'INSERT INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)',
+                    [judges[0].email, teams[0].name, round],
+                    (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    }
+                );
+            });
+
+            // Judge 1 should still be able to get their locked team
+            // (getNextTeamForJudge excludes teams locked by OTHER judges)
+            const nextTeam = await getNextTeamForJudge(judges[0].email, round);
+            // Should get team 2 since team 1 is already assigned to them
+            expect(nextTeam).not.toBeNull();
+            expect(nextTeam.name).toBe(teams[1].name);
+        });
+
+        test('should prevent multiple judges from locking the same team', async () => {
+            const teams = await createTestTeams(2);
+            const judges = await createTestJudges(2);
+            const round = 1;
+
+            // Judge 1 locks team 1
+            const lockResult1 = await lockTeamForJudgeTestDb(judges[0].email, teams[0].name, round);
+            expect(lockResult1.success).toBe(true);
+
+            // Judge 2 tries to lock the same team - should fail
+            const lockResult2 = await lockTeamForJudgeTestDb(judges[1].email, teams[0].name, round);
+            expect(lockResult2.success).toBe(false);
+            expect(lockResult2.reason).toBe('already_locked');
+        });
+
+        test('should allow judge to lock team after previous judge completes', async () => {
+            const teams = await createTestTeams(2);
+            const judges = await createTestJudges(2);
+            const round = 1;
+
+            // Judge 1 locks and completes team 1
+            await lockTeamForJudgeTestDb(judges[0].email, teams[0].name, round);
+            await markAssignmentCompleted(judges[0].email, teams[0].name, round);
+
+            // Judge 2 should now be able to lock team 1 (if it still needs judges)
+            // But since team 1 already has 1 judge, and if REQUIRED_JUDGES_PER_TEAM > 1, judge 2 can lock it
+            if (REQUIRED_JUDGES_PER_TEAM > 1) {
+                const lockResult = await lockTeamForJudgeTestDb(judges[1].email, teams[0].name, round);
+                expect(lockResult.success).toBe(true);
+            }
+        });
+
+        test('should get current assignments for a judge', async () => {
+            const teams = await createTestTeams(2);
+            const judges = await createTestJudges(1);
+            const round = 1;
+
+            // Lock team 1 for judge 1 (incomplete)
+            await lockTeamForJudgeTestDb(judges[0].email, teams[0].name, round);
+
+            // Get current assignments
+            const currentAssignments = await getCurrentAssignmentsForJudgeTestDb(judges[0].email, round);
+            expect(currentAssignments.length).toBe(1);
+            expect(currentAssignments[0].team_name).toBe(teams[0].name);
+
+            // Complete the assignment
+            await markAssignmentCompleted(judges[0].email, teams[0].name, round);
+
+            // Should have no current assignments
+            const currentAssignmentsAfter = await getCurrentAssignmentsForJudgeTestDb(judges[0].email, round);
+            expect(currentAssignmentsAfter.length).toBe(0);
+        });
+
+        test('should check if team is locked', async () => {
+            const teams = await createTestTeams(2);
+            const judges = await createTestJudges(1);
+            const round = 1;
+
+            // Initially not locked
+            const isLockedBefore = await isTeamLockedTestDb(teams[0].name, round);
+            expect(isLockedBefore).toBe(false);
+
+            // Lock the team
+            await lockTeamForJudgeTestDb(judges[0].email, teams[0].name, round);
+
+            // Should be locked
+            const isLockedAfter = await isTeamLockedTestDb(teams[0].name, round);
+            expect(isLockedAfter).toBe(true);
+
+            // Complete the assignment
+            await markAssignmentCompleted(judges[0].email, teams[0].name, round);
+
+            // Should not be locked anymore (completed assignments don't count as locked)
+            const isLockedAfterComplete = await isTeamLockedTestDb(teams[0].name, round);
+            expect(isLockedAfterComplete).toBe(false);
+        });
+    });
+
+    describe('Concurrent Integration Tests', () => {
+        // Helper function to lock team for judge using test database (simulating db.lockTeamForJudge)
+        // Includes retry logic for handling concurrent transaction conflicts
+        const lockTeamForJudgeTest = (judgeEmail, teamName, round, retries = 10) => {
+            return new Promise((resolve, reject) => {
+                const attemptLock = (attempt) => {
+                    // Use a transaction to ensure atomicity (simulating the actual implementation)
+                    testDb.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+                        if (beginErr) {
+                            // If transaction error and we have retries left, wait and retry
+                            const isTransactionError = beginErr.message && (
+                                beginErr.message.includes('transaction') || 
+                                beginErr.message.includes('SQLITE_BUSY') ||
+                                beginErr.code === 'SQLITE_BUSY'
+                            );
+                            if (isTransactionError && attempt < retries) {
+                                // Try to rollback any existing transaction
+                                testDb.run('ROLLBACK', () => {});
+                                const delay = Math.random() * 50 * (attempt + 1); // Exponential backoff with jitter
+                                setTimeout(() => attemptLock(attempt + 1), delay);
+                                return;
+                            }
+                            reject(beginErr);
+                            return;
+                        }
+
+                        // Check if team already has enough judges (prevent over-assignment)
+                        testDb.get(
+                            `SELECT COUNT(*) as judge_count
+                             FROM judge_team_assignments 
+                             WHERE team_name = ? 
+                               AND round = ?`,
+                            [teamName, round],
+                            (err, countResult) => {
+                                if (err) {
+                                    testDb.run('ROLLBACK', () => { });
+                                    if (attempt < retries) {
+                                        const delay = Math.random() * 10 * (attempt + 1);
+                                        setTimeout(() => attemptLock(attempt + 1), delay);
+                                        return;
+                                    }
+                                    reject(err);
+                                    return;
+                                }
+
+                                // Check if team already has enough judges
+                                if (countResult && parseInt(countResult.judge_count) >= REQUIRED_JUDGES_PER_TEAM) {
+                                    testDb.run('ROLLBACK', () => { });
+                                    resolve({ success: false, reason: 'team_full' });
+                                    return;
+                                }
+
+                                // Check if team is already locked by another judge
+                                testDb.get(
+                                    `SELECT judge_email 
+                                     FROM judge_team_assignments 
+                                     WHERE team_name = ? 
+                                       AND round = ? 
+                                       AND completed = 0 
+                                       AND locked_at IS NOT NULL
+                                       AND judge_email != ?
+                                     LIMIT 1`,
+                                    [teamName, round, judgeEmail],
+                                    (err, existingLock) => {
+                                        if (err) {
+                                            testDb.run('ROLLBACK', () => { });
+                                            // Retry on error if we have attempts left
+                                            if (attempt < retries) {
+                                                const delay = Math.random() * 10 * (attempt + 1);
+                                                setTimeout(() => attemptLock(attempt + 1), delay);
+                                                return;
+                                            }
+                                            reject(err);
+                                            return;
+                                        }
+
+                                        if (existingLock) {
+                                            // Team is locked by another judge
+                                            testDb.run('ROLLBACK', () => { });
+                                            resolve({ success: false, reason: 'already_locked' });
+                                            return;
+                                        }
+
+                                        // Double-check count after checking for locks (race condition protection)
+                                        testDb.get(
+                                            `SELECT COUNT(*) as judge_count
+                                             FROM judge_team_assignments 
+                                             WHERE team_name = ? 
+                                               AND round = ?`,
+                                            [teamName, round],
+                                            (err, finalCountResult) => {
+                                                if (err) {
+                                                    testDb.run('ROLLBACK', () => { });
+                                                    if (attempt < retries) {
+                                                        const delay = Math.random() * 10 * (attempt + 1);
+                                                        setTimeout(() => attemptLock(attempt + 1), delay);
+                                                        return;
+                                                    }
+                                                    reject(err);
+                                                    return;
+                                                }
+
+                                                // Final check: if team is now full, don't lock
+                                                if (finalCountResult && parseInt(finalCountResult.judge_count) >= REQUIRED_JUDGES_PER_TEAM) {
+                                                    testDb.run('ROLLBACK', () => { });
+                                                    resolve({ success: false, reason: 'team_full' });
+                                                    return;
+                                                }
+
+                                                // Try to insert or update the assignment with lock
+                                                testDb.run(
+                                                    `INSERT INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) 
+                                                     VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+                                                     ON CONFLICT(judge_email, team_name, round) 
+                                                     DO UPDATE SET locked_at = CURRENT_TIMESTAMP 
+                                                     WHERE completed = 0 AND locked_at IS NULL`,
+                                                    [judgeEmail, teamName, round],
+                                                    function (err) {
+                                                        if (err) {
+                                                            testDb.run('ROLLBACK', () => { });
+                                                            // Retry on error if we have attempts left
+                                                            if (attempt < retries) {
+                                                                const delay = Math.random() * 10 * (attempt + 1);
+                                                                setTimeout(() => attemptLock(attempt + 1), delay);
+                                                                return;
+                                                            }
+                                                            reject(err);
+                                                            return;
+                                                        }
+
+                                                        // Verify the lock was set
+                                                        testDb.get(
+                                                            `SELECT locked_at, id
+                                                             FROM judge_team_assignments 
+                                                             WHERE judge_email = ? 
+                                                               AND team_name = ? 
+                                                               AND round = ? 
+                                                               AND completed = 0 
+                                                               AND locked_at IS NOT NULL`,
+                                                            [judgeEmail, teamName, round],
+                                                            (err, lockCheck) => {
+                                                                if (err) {
+                                                                    testDb.run('ROLLBACK', () => { });
+                                                                    // Retry on error if we have attempts left
+                                                                    if (attempt < retries) {
+                                                                        const delay = Math.random() * 10 * (attempt + 1);
+                                                                        setTimeout(() => attemptLock(attempt + 1), delay);
+                                                                        return;
+                                                                    }
+                                                                    reject(err);
+                                                                    return;
+                                                                }
+
+                                                                testDb.run('COMMIT', (commitErr) => {
+                                                                    if (commitErr) {
+                                                                        testDb.run('ROLLBACK', () => { });
+                                                                        // Retry on commit error if we have attempts left
+                                                                        if (attempt < retries) {
+                                                                            const delay = Math.random() * 10 * (attempt + 1);
+                                                                            setTimeout(() => attemptLock(attempt + 1), delay);
+                                                                            return;
+                                                                        }
+                                                                        reject(commitErr);
+                                                                        return;
+                                                                    }
+
+                                                                    if (lockCheck) {
+                                                                        resolve({ success: true, id: lockCheck.id });
+                                                                    } else {
+                                                                        resolve({ success: false, reason: 'lock_failed' });
+                                                                    }
+                                                                });
+                                                            }
+                                                        );
+                                                    }
+                                                );
+                                            }
+                                        );
+                                    }
+                                );
+                            }
+                        );
+                    });
+                };
+                
+                attemptLock(0);
+            });
+        };
+
+        // Helper function to simulate concurrent judge requests
+        const simulateConcurrentJudgeRequests = async (judges, round, maxIterations = 100) => {
+            const results = [];
+            let iterations = 0;
+            let allComplete = false;
+            let consecutiveNoProgress = 0;
+
+            while (!allComplete && iterations < maxIterations) {
+                iterations++;
+                let progressMade = false;
+                
+                // Simulate all judges requesting teams simultaneously
+                const promises = judges.map(async (judge) => {
+                    try {
+                        // Get next team for this judge
+                        const nextTeam = await getNextTeamForJudge(judge.email, round);
+                        if (!nextTeam) {
+                            return { judge: judge.email, team: null, locked: false };
+                        }
+
+                        // Try to lock the team (simulating the actual route behavior)
+                        const lockResult = await lockTeamForJudgeTest(judge.email, nextTeam.name, round);
+                        
+                        if (lockResult.success) {
+                            // Simulate completing the assignment
+                            await markAssignmentCompleted(judge.email, nextTeam.name, round);
+                            return { judge: judge.email, team: nextTeam.name, locked: true, progress: true };
+                        } else {
+                            return { judge: judge.email, team: nextTeam.name, locked: false, reason: lockResult.reason, progress: false };
+                        }
+                    } catch (error) {
+                        return { judge: judge.email, error: error.message, progress: false };
+                    }
+                });
+
+                const iterationResults = await Promise.all(promises);
+                results.push(...iterationResults);
+
+                // Check if any progress was made
+                progressMade = iterationResults.some(r => r.progress === true);
+                if (progressMade) {
+                    consecutiveNoProgress = 0;
+                } else {
+                    consecutiveNoProgress++;
+                }
+
+                // Check if all teams have enough judges
+                const stats = await getQueueStats(round);
+                const incomplete = stats.filter(t => parseInt(t.judge_count) < REQUIRED_JUDGES_PER_TEAM);
+                if (incomplete.length === 0) {
+                    allComplete = true;
+                } else if (consecutiveNoProgress >= 5) {
+                    // If no progress for 5 iterations, check if it's because judges have no more teams
+                    // If so, we might have a situation where not all teams can get 2 judges
+                    // (e.g., if judges have already judged too many teams)
+                    const judgesWithAvailableTeams = await Promise.all(
+                        judges.map(async (judge) => {
+                            const nextTeam = await getNextTeamForJudge(judge.email, round);
+                            return nextTeam !== null;
+                        })
+                    );
+                    const hasAvailableJudges = judgesWithAvailableTeams.some(available => available);
+                    if (!hasAvailableJudges) {
+                        // No judges have available teams, but teams still need judges
+                        // This shouldn't happen in a well-designed system, but we'll break to avoid infinite loop
+                        break;
+                    }
+                }
+
+                // Small delay to allow database operations to complete
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+
+            return { results, iterations, allComplete };
+        };
+
+        // Helper function to verify final state
+        const verifyFinalState = async (teams, round, requiredJudges) => {
+            const stats = await getQueueStats(round);
+            
+            // Verify all teams have exactly the required number of judges
+            stats.forEach(team => {
+                expect(parseInt(team.judge_count)).toBe(requiredJudges);
+            });
+
+            // Verify no team has more than required
+            const overAssigned = stats.filter(t => parseInt(t.judge_count) > requiredJudges);
+            expect(overAssigned.length).toBe(0);
+
+            // Verify all teams are present
+            expect(stats.length).toBe(teams.length);
+
+            return stats;
+        };
+
+        // Helper function to get detailed assignment statistics
+        const getAssignmentStats = async (round) => {
+            return new Promise((resolve, reject) => {
+                testDb.all(
+                    `SELECT 
+                        jta.judge_email,
+                        jta.team_name,
+                        jta.completed,
+                        jta.locked_at,
+                        jta.assigned_at
+                     FROM judge_team_assignments jta
+                     WHERE jta.round = ?
+                     ORDER BY jta.team_name, jta.judge_email`,
+                    [round],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
+            });
+        };
+
+        // Helper function to verify no judge judged same team twice
+        const verifyNoDuplicateJudgings = async (judges, round) => {
+            for (const judge of judges) {
+                const assignments = await new Promise((resolve, reject) => {
+                    testDb.all(
+                        'SELECT team_name FROM judge_team_assignments WHERE judge_email = ? AND round = ?',
+                        [judge.email, round],
+                        (err, rows) => {
+                            if (err) reject(err);
+                            else resolve(rows);
+                        }
+                    );
+                });
+
+                const teamNames = assignments.map(a => a.team_name);
+                const uniqueTeams = new Set(teamNames);
+                expect(uniqueTeams.size).toBe(teamNames.length);
+            }
+        };
+
+        test('should handle concurrent assignment with 20 teams and 8 judges, ensuring all teams get exactly 2 judges', async () => {
+            const teams = await createTestTeams(20);
+            const judges = await createTestJudges(8);
+            const round = 1;
+
+            // Simulate concurrent judge requests
+            const { results, iterations, allComplete } = await simulateConcurrentJudgeRequests(judges, round, 200);
+
+            // Verify all teams completed
+            expect(allComplete).toBe(true);
+            expect(iterations).toBeLessThan(200);
+
+            // Verify final state
+            const finalStats = await verifyFinalState(teams, round, REQUIRED_JUDGES_PER_TEAM);
+
+            // Verify no team has more than 2 judges
+            finalStats.forEach(team => {
+                expect(parseInt(team.judge_count)).toBeLessThanOrEqual(REQUIRED_JUDGES_PER_TEAM);
+            });
+
+            // Verify no judge judged the same team twice
+            await verifyNoDuplicateJudgings(judges, round);
+
+            // Verify total assignments = teams * required judges
+            const totalAssignments = finalStats.reduce((sum, team) => sum + parseInt(team.judge_count), 0);
+            expect(totalAssignments).toBe(teams.length * REQUIRED_JUDGES_PER_TEAM);
+        });
+
+        test('should handle race conditions when multiple judges try to lock the same team simultaneously', async () => {
+            const teams = await createTestTeams(5);
+            const judges = await createTestJudges(8);
+            const round = 1;
+
+            // Have all 8 judges attempt to lock the same team simultaneously
+            const targetTeam = teams[0].name;
+            const lockPromises = judges.map((judge, idx) => 
+                lockTeamForJudgeTest(judge.email, targetTeam, round).then(result => ({ judge, idx, result }))
+            );
+
+            const lockResults = await Promise.all(lockPromises);
+
+            // Only one (or possibly two if the team needs 2 judges) should succeed
+            const successfulLocks = lockResults.filter(r => r.result.success);
+            expect(successfulLocks.length).toBeGreaterThan(0);
+            expect(successfulLocks.length).toBeLessThanOrEqual(REQUIRED_JUDGES_PER_TEAM);
+
+            // Others should get 'already_locked' or 'lock_failed'
+            const failedLocks = lockResults.filter(r => !r.result.success);
+            expect(failedLocks.length + successfulLocks.length).toBe(judges.length);
+
+            // Complete the successful locks
+            for (const lockResult of successfulLocks) {
+                await markAssignmentCompleted(lockResult.judge.email, targetTeam, round);
+            }
+
+            // Now continue until team has exactly 2 judges
+            // Use the simulation helper to ensure all teams get required judges
+            const { allComplete } = await simulateConcurrentJudgeRequests(judges, round, 200);
+            expect(allComplete).toBe(true);
+
+            // Verify team has exactly 2 judges
+            const finalStats = await getQueueStats(round);
+            const teamStats = finalStats.find(t => t.team_name === targetTeam);
+            expect(parseInt(teamStats.judge_count)).toBe(REQUIRED_JUDGES_PER_TEAM);
+        });
+
+        test('should handle multiple rounds of concurrent assignments correctly', async () => {
+            const teams = await createTestTeams(20);
+            const judges = await createTestJudges(8);
+            const rounds = [1, 2, 3];
+
+            for (const round of rounds) {
+                // Simulate concurrent judge requests for this round
+                const { allComplete } = await simulateConcurrentJudgeRequests(judges, round, 200);
+
+                // Verify all teams have exactly 2 judges for this round
+                const roundStats = await verifyFinalState(teams, round, REQUIRED_JUDGES_PER_TEAM);
+
+                // Verify no judge judged the same team twice in this round
+                await verifyNoDuplicateJudgings(judges, round);
+
+                expect(allComplete).toBe(true);
+            }
+
+            // Verify no judge judged the same team across different rounds
+            for (const judge of judges) {
+                const allAssignments = await new Promise((resolve, reject) => {
+                    testDb.all(
+                        'SELECT DISTINCT team_name FROM judge_team_assignments WHERE judge_email = ?',
+                        [judge.email],
+                        (err, rows) => {
+                            if (err) reject(err);
+                            else resolve(rows);
+                        }
+                    );
+                });
+
+                // Count assignments per team across all rounds
+                const teamCounts = {};
+                for (const round of rounds) {
+                    const roundAssignments = await new Promise((resolve, reject) => {
+                        testDb.all(
+                            'SELECT team_name FROM judge_team_assignments WHERE judge_email = ? AND round = ?',
+                            [judge.email, round],
+                            (err, rows) => {
+                                if (err) reject(err);
+                                else resolve(rows);
+                            }
+                        );
+                    });
+
+                    roundAssignments.forEach(a => {
+                        teamCounts[a.team_name] = (teamCounts[a.team_name] || 0) + 1;
+                    });
+                }
+
+                // Each team should appear at most once (judge can't judge same team in different rounds)
+                Object.values(teamCounts).forEach(count => {
+                    expect(count).toBe(1);
+                });
+            }
+        });
+
+        test('should handle concurrent locking and completion of assignments', async () => {
+            const teams = await createTestTeams(20);
+            const judges = await createTestJudges(8);
+            const round = 1;
+
+            // Phase 1: Concurrent locking
+            const lockPromises = judges.map(async (judge) => {
+                const nextTeam = await getNextTeamForJudge(judge.email, round);
+                if (!nextTeam) return null;
+                const lockResult = await lockTeamForJudgeTest(judge.email, nextTeam.name, round);
+                return { judge: judge.email, team: nextTeam.name, lockResult };
+            });
+
+            const lockResults = await Promise.all(lockPromises);
+            const successfulLocks = lockResults.filter(r => r && r.lockResult.success);
+
+            // Phase 2: Continue locking and completing until all teams have judges assigned
+            // Complete the initial locks first
+            for (const lockResult of successfulLocks) {
+                if (lockResult.lockResult.success) {
+                    await markAssignmentCompleted(lockResult.judge, lockResult.team, round);
+                }
+            }
+
+            // Continue with simulation until all teams have required judges
+            const { allComplete } = await simulateConcurrentJudgeRequests(judges, round, 200);
+            expect(allComplete).toBe(true);
+
+            // Complete any remaining incomplete assignments
+            const allAssignments = await getAssignmentStats(round);
+            const incompleteAssignments = allAssignments.filter(a => a.completed === 0);
+            if (incompleteAssignments.length > 0) {
+                await Promise.all(
+                    incompleteAssignments.map(async (assignment) => {
+                        await markAssignmentCompleted(assignment.judge_email, assignment.team_name, round);
+                    })
+                );
+            }
+
+            // Verify final state
+            const finalStats = await verifyFinalState(teams, round, REQUIRED_JUDGES_PER_TEAM);
+
+            // Verify all assignments are completed
+            const finalAssignments = await getAssignmentStats(round);
+            const stillIncomplete = finalAssignments.filter(a => a.completed === 0);
+            expect(stillIncomplete.length).toBe(0);
+
+            // Verify no duplicate judgings
+            await verifyNoDuplicateJudgings(judges, round);
+        });
+
+        test('should prevent over-assignment even under heavy concurrent load', async () => {
+            const teams = await createTestTeams(10);
+            const judges = await createTestJudges(8);
+            const round = 1;
+
+            // Simulate rapid concurrent requests
+            const rapidRequests = async () => {
+                const promises = [];
+                // Create multiple waves of concurrent requests
+                for (let wave = 0; wave < 5; wave++) {
+                    const wavePromises = judges.map(async (judge) => {
+                        // Add small random delay to increase race condition likelihood
+                        await new Promise(resolve => setTimeout(resolve, Math.random() * 5));
+                        
+                        const nextTeam = await getNextTeamForJudge(judge.email, round);
+                        if (!nextTeam) return null;
+
+                        const lockResult = await lockTeamForJudgeTest(judge.email, nextTeam.name, round);
+                        if (lockResult.success) {
+                            // Complete immediately
+                            await markAssignmentCompleted(judge.email, nextTeam.name, round);
+                            return { judge: judge.email, team: nextTeam.name, success: true };
+                        }
+                        return { judge: judge.email, team: nextTeam.name, success: false };
+                    });
+                    promises.push(...wavePromises);
+                }
+                return Promise.all(promises);
+            };
+
+            // Run rapid requests
+            await rapidRequests();
+
+            // Continue until all teams are complete
+            let allComplete = false;
+            let iterations = 0;
+            while (!allComplete && iterations < 100) {
+                iterations++;
+                const stats = await getQueueStats(round);
+                const incomplete = stats.filter(t => parseInt(t.judge_count) < REQUIRED_JUDGES_PER_TEAM);
+                if (incomplete.length === 0) {
+                    allComplete = true;
+                    break;
+                }
+
+                // More concurrent requests
+                await Promise.all(
+                    judges.map(async (judge) => {
+                        const nextTeam = await getNextTeamForJudge(judge.email, round);
+                        if (nextTeam) {
+                            const lockResult = await lockTeamForJudgeTest(judge.email, nextTeam.name, round);
+                            if (lockResult.success) {
+                                await markAssignmentCompleted(judge.email, nextTeam.name, round);
+                            }
+                        }
+                    })
+                );
+
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+
+            // Verify no team exceeds 2 judges
+            const finalStats = await getQueueStats(round);
+            finalStats.forEach(team => {
+                expect(parseInt(team.judge_count)).toBeLessThanOrEqual(REQUIRED_JUDGES_PER_TEAM);
+                expect(parseInt(team.judge_count)).toBe(REQUIRED_JUDGES_PER_TEAM);
+            });
+
+            // Verify all teams have exactly 2 judges
+            await verifyFinalState(teams, round, REQUIRED_JUDGES_PER_TEAM);
+
+            // Verify no duplicate judgings
+            await verifyNoDuplicateJudgings(judges, round);
+
+            // Double-check: Query database directly to ensure no over-assignment
+            const directCheck = await new Promise((resolve, reject) => {
+                testDb.all(
+                    `SELECT team_name, COUNT(*) as count 
+                     FROM judge_team_assignments 
+                     WHERE round = ? 
+                     GROUP BY team_name`,
+                    [round],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
+            });
+
+            directCheck.forEach(row => {
+                expect(parseInt(row.count)).toBeLessThanOrEqual(REQUIRED_JUDGES_PER_TEAM);
+                expect(parseInt(row.count)).toBe(REQUIRED_JUDGES_PER_TEAM);
+            });
         });
     });
 });

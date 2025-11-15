@@ -78,10 +78,13 @@ router.get('/', async (req, res) => {
     return teamData;
   });
 
-  // Create a map of table -> team for quick lookup
+  // Create a map of table -> teams array for quick lookup (supports multiple teams per table)
   const tableMap = {};
   teams.forEach(team => {
-    tableMap[team.table_name] = team;
+    if (!tableMap[team.table_name]) {
+      tableMap[team.table_name] = [];
+    }
+    tableMap[team.table_name].push(team);
   });
 
   // Generate grid structure dynamically from database tables
@@ -112,7 +115,7 @@ router.get('/', async (req, res) => {
       const tableId = `${letter}${num}`;
       row.push({
         id: tableId,
-        team: tableMap[tableId] || null
+        teams: tableMap[tableId] || []
       });
     });
     gridRows.push(row);
