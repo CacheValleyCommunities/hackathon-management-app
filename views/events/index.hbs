@@ -1,0 +1,37 @@
+<div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <h1 class="text-4xl font-bold text-gray-900 tracking-tight mb-3">Choose an event</h1>
+    <p class="text-gray-600 mb-8">Sign in, pick an event, then register a team and project for that event.</p>
+
+    {{#if (eq (lookup query 'error') 'missing')}}
+    <div class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">That event could not be found.</div>
+    {{/if}}
+
+    {{#if events.length}}
+    <div class="space-y-4">
+        {{#each events}}
+        <div class="border border-gray-200 rounded-lg p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-900">{{this.event_name}}</h2>
+                <p class="text-sm text-gray-500 mt-1">
+                    {{#if this.event_dates_text}}{{this.event_dates_text}}{{else if this.start_date}}{{this.start_date}}{{#if this.end_date}} — {{this.end_date}}{{/if}}{{else}}Dates to be announced{{/if}}
+                </p>
+                <p class="text-xs uppercase tracking-wide text-gray-400 mt-2">{{this.status}}</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="/events/{{this.slug}}" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">View</a>
+                {{#if ../user}}
+                <form method="POST" action="/events/select">
+                    <input type="hidden" name="eventId" value="{{this.id}}">
+                    <button type="submit" class="px-4 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800">Enter</button>
+                </form>
+                {{else}}
+                <a href="/auth/login" class="px-4 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800">Sign in</a>
+                {{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{else}}
+    <div class="border border-dashed border-gray-300 rounded-lg p-8 text-gray-600">No events are open yet.</div>
+    {{/if}}
+</div>

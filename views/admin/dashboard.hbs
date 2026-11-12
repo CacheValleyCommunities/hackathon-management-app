@@ -74,6 +74,12 @@
                     <p class="text-sm text-gray-600">Bulk import from CSV file</p>
                 </a>
 
+                <a href="/admin/events"
+                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">All Events</h3>
+                    <p class="text-sm text-gray-600">Create, open, or switch events</p>
+                </a>
+
                 <a href="/admin/settings"
                     class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Event Settings</h3>
@@ -114,6 +120,12 @@
                     class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Finalize Judging</h3>
                     <p class="text-sm text-gray-600">Lock judging and select winners</p>
+                </a>
+
+                <a href="/admin/scores"
+                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Scores</h3>
+                    <p class="text-sm text-gray-600">Edit scores and break ties</p>
                 </a>
 
                 <a href="/scores/select-team"
@@ -260,6 +272,8 @@
                                             </option>
                                             <option value="participant" {{#if (eq this.role 'participant'
                                                 )}}selected{{/if}}>Participant</option>
+                                            <option value="chaperone" {{#if (eq this.role 'chaperone' )}}selected{{/if}}>Chaperone
+                                            </option>
                                             <option value="admin" {{#if (eq this.role 'admin' )}}selected{{/if}}>Admin
                                             </option>
                                         </select>

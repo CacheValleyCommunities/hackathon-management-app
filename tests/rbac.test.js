@@ -70,14 +70,14 @@ describe('RBAC Middleware', () => {
       expect(next).toHaveBeenCalled();
     });
 
-    test('should default to judge role if role is not set', async () => {
-      req.session.user = {}; // No role set
+    test('should deny access when no event role is set', async () => {
+      req.session.user = {};
       
       const middleware = requireRole('judge');
       await middleware(req, res, next);
       
-      expect(res.redirect).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
     });
   });
 

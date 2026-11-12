@@ -5,7 +5,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Score Teams</h1>
-                    <p class="text-sm text-gray-500 mt-2">Round {{round}} • Select a team to score</p>
+                    <p class="text-sm text-gray-500 mt-2">Round {{round}} • Edit a score you already entered. New scores come from the queue.</p>
                 </div>
                 <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
                     ← Back to Home
@@ -58,6 +58,10 @@
             <p class="text-green-800 font-medium">✓ Score saved successfully!</p>
         </div>
         {{/if}}
+
+        <div class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-blue-800 text-sm">Each team gets {{requiredJudgesPerTeam}} judges this round. <a href="/scores/judge-queue" class="font-medium underline">Open the queue</a> to score a team that still needs a judge.</p>
+        </div>
 
         {{#if isRoundLocked}}
         <div class="mb-8 bg-red-50 border border-red-200 rounded-lg p-6">
@@ -143,10 +147,20 @@
                         class="block w-full text-center px-4 py-3 bg-gray-200 text-gray-500 rounded-lg cursor-not-allowed font-medium">
                         🔒 Locked
                     </button>
-                    {{else}}
+                    {{else if (contains ../../scoredTeams this.name)}}
                     <a href="/scores/enter/{{encodeURIComponent this.name}}?round={{../../../round}}"
-                        class="block w-full text-center px-4 py-3 {{#if (contains ../../scoredTeams this.name)}}bg-gray-900 hover:bg-gray-800{{else}}bg-gray-900 hover:bg-gray-800{{/if}} text-white rounded-lg transition font-semibold">
-                        {{#if (contains ../../scoredTeams this.name)}}Edit Score{{else}}Enter Score{{/if}}
+                        class="block w-full text-center px-4 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
+                        Edit Score
+                    </a>
+                    {{else if (contains ../../assignedTeams this.name)}}
+                    <a href="/scores/enter/{{encodeURIComponent this.name}}?round={{../../../round}}"
+                        class="block w-full text-center px-4 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
+                        Continue Score
+                    </a>
+                    {{else}}
+                    <a href="/scores/judge-queue"
+                        class="block w-full text-center px-4 py-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-900 rounded-lg transition font-semibold">
+                        Score from the queue
                     </a>
                     {{/if}}
                 </div>

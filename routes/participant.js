@@ -5,8 +5,25 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const db = require('../db/database');
-const { requireParticipant, requireTeamOwner, requireTeamLeader } = require('../middleware/rbac');
+const { requireParticipant, requireSelectedEvent } = require('../middleware/rbac');
 const { checkAndReturnError } = require('../middleware/validation');
+
+router.use(requireSelectedEvent);
+
+const teamForRequest = async (req, explicitId) => {
+  const user = await db.getUserByEmail(req.session.user.email);
+  if (!user) return null;
+  const requested = explicitId || req.query.teamId || req.body.teamId;
+  if (requested) {
+    const team = await db.getTeamById(parseInt(requested, 10), true);
+    if (!team || team.event_id !== req.eventId) return null;
+    if (req.session.user.role === 'admin') return team;
+    const allowed = await db.isTeamLeader(team.id, user.email);
+    return allowed ? team : null;
+  }
+  if (req.eventRole === 'chaperone' || user.account_type === 'school') return null;
+  return db.getIndividualTeam(req.eventId, user.id);
+};
 
 // Configure multer for screenshot uploads
 const uploadsDir = path.join(__dirname, '../public/uploads/screenshots');
@@ -81,19 +98,15 @@ const uploadBannerLogo = multer({
 // GET participant dashboard
 router.get('/', requireParticipant, async (req, res) => {
   try {
-    const user = await db.getUserWithTeam(req.session.user.email);
-
-    if (!user || !user.team_id) {
+    const team = await teamForRequest(req);
+    if (!team) {
       return res.render('error', {
-        message: 'No team associated with your account. Please contact an admin.'
+        message: 'No team associated with your account for this event.'
       });
     }
 
-    const team = await db.getTeamById(user.team_id);
-
-    // Get cumulative scores for this team up to current round
-    const currentRound = req.session.currentRound || 1;
-    const allScores = await db.getJudgeScores(null, null, team.table_name);
+    const currentRound = (req.eventSettings && req.eventSettings.current_round) || req.session.currentRound || 1;
+    const allScores = await db.getJudgeScores(req.eventId, null, null, team.table_name);
     const teamScores = allScores.filter(s => s.team_name === team.name && s.round <= currentRound);
 
     // Calculate total score across all rounds up to current round
@@ -110,7 +123,7 @@ router.get('/', requireParticipant, async (req, res) => {
     }
 
     // Get results for this team's division
-    const allResults = await db.getTableResults(currentRound, null);
+    const allResults = await db.getTableResults(req.eventId, currentRound, null);
     const teamDivision = team.division || 'Unassigned';
     const divisionResults = allResults[teamDivision] || [];
     const teamRank = divisionResults.findIndex(t => t.team_name === team.name) + 1;
@@ -138,48 +151,24 @@ router.get('/', requireParticipant, async (req, res) => {
 // GET edit team page
 router.get('/team/edit', requireParticipant, async (req, res) => {
   try {
-    const userRole = req.session.user.role;
-    let teamId = null;
-
-    // Admins can edit any team via query parameter
-    if (userRole === 'admin' && req.query.teamId) {
-      teamId = parseInt(req.query.teamId);
-    } else {
-      // Regular participants edit their own team
-      const user = await db.getUserWithTeam(req.session.user.email);
-      if (!user || !user.team_id) {
-        return res.render('error', {
-          message: 'No team associated with your account.'
-        });
-      }
-      teamId = user.team_id;
-
-      // Check if user is team leader (admins bypass this check)
-      const userEmail = req.session.user.email;
-      const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
-      if (!userIsTeamLeader) {
-        return res.status(403).render('error', {
-          message: 'Access denied. Only the team leader or an admin can edit team information.'
-        });
-      }
-    }
-
-    const team = await db.getTeamById(teamId);
+    const team = await teamForRequest(req, req.query.teamId);
     if (!team) {
       return res.render('error', {
-        message: 'Team not found.'
+        message: 'No team associated with your account for this event.'
       });
     }
+    const teamId = team.id;
 
     const screenshots = await db.getTeamScreenshots(teamId);
-    const categories = await db.getCategories();
+    const categories = await db.getCategories(req.eventId);
 
     res.render('participant/edit-team', {
       title: 'Edit Team Information',
       team,
       screenshots,
       categories,
-      isAdmin: userRole === 'admin'
+      isAdmin: req.session.user.role === 'admin',
+      isSchoolTeam: team.registration_type === 'school'
     });
   } catch (error) {
     console.error('Edit team error:', error);
@@ -197,38 +186,17 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
   { name: 'logo_image', maxCount: 1 }
 ]), async (req, res) => {
   try {
-    const userRole = req.session.user.role;
-    let teamId = null;
-
-    // Admins can update any team via body parameter
-    if (userRole === 'admin' && req.body.teamId) {
-      teamId = parseInt(req.body.teamId);
-    } else {
-      // Regular participants update their own team
-      const user = await db.getUserWithTeam(req.session.user.email);
-      if (!user || !user.team_id) {
-        return res.render('error', {
-          message: 'No team associated with your account.'
-        });
-      }
-      teamId = user.team_id;
-
-      // Check authorization (using helper function that doesn't expose team_leader_email)
-      const userEmail = req.session.user.email;
-      const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
-
-      if (!userIsTeamLeader) {
-        return res.status(403).render('error', {
-          message: 'Access denied. Only the team leader or an admin can edit team information.'
-        });
-      }
-    }
-
-    // Get current team for authorization check and to preserve existing data
-    const currentTeam = await db.getTeamById(teamId);
+    const currentTeam = await teamForRequest(req, req.body.teamId);
     if (!currentTeam) {
       return res.render('error', {
-        message: 'Team not found.'
+        message: 'No team associated with your account for this event.'
+      });
+    }
+    const teamId = currentTeam.id;
+
+    if (currentTeam.registration_type === 'school' && (req.body.teamMembers || req.body.isUnder18 || req.body.guardianEmail)) {
+      return res.status(400).render('error', {
+        message: 'School teams cannot store student names, ages, or guardian emails.'
       });
     }
 
@@ -243,7 +211,7 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
     // Validate category is selected
     if (!categoryId || categoryId === '') {
       const screenshots = await db.getTeamScreenshots(teamId);
-      const categories = await db.getCategories();
+      const categories = await db.getCategories(req.eventId);
       return res.render('participant/edit-team', {
         title: 'Edit Team Information',
         team: currentTeam,
@@ -384,11 +352,13 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
       name: currentTeam.name,
       table_name: currentTeam.table_name,
       project_name: projectName.trim(),
-      contact_email: contactEmail ? contactEmail.trim() : null,
+      contact_email: currentTeam.registration_type === 'school'
+        ? currentTeam.contact_email
+        : (contactEmail ? contactEmail.trim() : null),
       github_link: githubLink ? githubLink.trim() : null,
       website_link: websiteLink ? websiteLink.trim() : null,
       readme_content: readmeContent ? readmeContent.trim() : null,
-      team_members: teamMembersArray,
+      team_members: currentTeam.registration_type === 'school' ? null : teamMembersArray,
       banner_image: bannerImage,
       logo_image: logoImage,
       category_id: categoryIdInt,
@@ -450,17 +420,15 @@ router.post('/team/screenshot/:id/delete', requireParticipant, async (req, res) 
 
     const teamId = screenshot.team_id;
 
-    // Check authorization
-    if (userRole !== 'admin') {
-      const user = await db.getUserWithTeam(req.session.user.email);
-      if (!user || !user.team_id || user.team_id !== teamId) {
-        return res.status(403).json({ error: 'No team associated with your account.' });
+    if (req.session.user.role !== 'admin') {
+      const owned = await teamForRequest(req, teamId);
+      if (!owned) {
+        return res.status(403).json({ error: 'Access denied.' });
       }
-
-      const userEmail = req.session.user.email;
-      const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
-      if (!userIsTeamLeader) {
-        return res.status(403).json({ error: 'Access denied. Only the team leader or an admin can delete screenshots.' });
+    } else {
+      const team = await db.getTeamById(teamId);
+      if (!team || team.event_id !== req.eventId) {
+        return res.status(403).json({ error: 'Access denied.' });
       }
     }
 
@@ -490,19 +458,11 @@ router.post('/team/screenshots/reorder', requireParticipant, async (req, res) =>
       teamId = parseInt(req.body.teamId);
     } else {
       // Regular participants reorder their own team's screenshots
-      const user = await db.getUserWithTeam(req.session.user.email);
-      if (!user || !user.team_id) {
-        return res.status(403).json({ error: 'No team associated with your account.' });
-      }
-      teamId = user.team_id;
-
-      // Check authorization (using helper function that doesn't expose team_leader_email)
-      const userEmail = req.session.user.email;
-      const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
-
-      if (!userIsTeamLeader) {
+      const owned = await teamForRequest(req, req.body.teamId);
+      if (!owned) {
         return res.status(403).json({ error: 'Access denied. Only the team leader or an admin can reorder screenshots.' });
       }
+      teamId = owned.id;
     }
 
     const { orders } = req.body;
@@ -529,19 +489,11 @@ router.post('/team/banner/delete', requireParticipant, async (req, res) => {
       teamId = parseInt(req.body.teamId);
     } else {
       // Regular participants delete their own team's banner
-      const user = await db.getUserWithTeam(req.session.user.email);
-      if (!user || !user.team_id) {
-        return res.status(403).json({ error: 'No team associated with your account.' });
-      }
-      teamId = user.team_id;
-
-      // Check authorization (using helper function that doesn't expose team_leader_email)
-      const userEmail = req.session.user.email;
-      const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
-
-      if (!userIsTeamLeader) {
+      const owned = await teamForRequest(req, req.body.teamId);
+      if (!owned) {
         return res.status(403).json({ error: 'Access denied. Only the team leader or an admin can delete the banner.' });
       }
+      teamId = owned.id;
     }
 
     const team = await db.getTeamById(teamId);
@@ -575,19 +527,11 @@ router.post('/team/logo/delete', requireParticipant, async (req, res) => {
       teamId = parseInt(req.body.teamId);
     } else {
       // Regular participants delete their own team's logo
-      const user = await db.getUserWithTeam(req.session.user.email);
-      if (!user || !user.team_id) {
-        return res.status(403).json({ error: 'No team associated with your account.' });
-      }
-      teamId = user.team_id;
-
-      // Check authorization (using helper function that doesn't expose team_leader_email)
-      const userEmail = req.session.user.email;
-      const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
-
-      if (!userIsTeamLeader) {
+      const owned = await teamForRequest(req, req.body.teamId);
+      if (!owned) {
         return res.status(403).json({ error: 'Access denied. Only the team leader or an admin can delete the logo.' });
       }
+      teamId = owned.id;
     }
 
     const team = await db.getTeamById(teamId);
@@ -613,19 +557,15 @@ router.post('/team/logo/delete', requireParticipant, async (req, res) => {
 // GET live scores page
 router.get('/scores', requireParticipant, async (req, res) => {
   try {
-    const user = await db.getUserWithTeam(req.session.user.email);
-
-    if (!user || !user.team_id) {
+    const team = await teamForRequest(req, req.query.teamId);
+    if (!team) {
       return res.render('error', {
-        message: 'No team associated with your account.'
+        message: 'No team associated with your account for this event.'
       });
     }
+    const round = parseInt(req.query.round, 10) || (req.eventSettings && req.eventSettings.current_round) || 1;
 
-    const team = await db.getTeamById(user.team_id);
-    const round = parseInt(req.query.round) || req.session.currentRound || 1;
-
-    // Get all scores for this team across all rounds
-    const allScores = await db.getJudgeScores(null, null, team.table_name);
+    const allScores = await db.getJudgeScores(req.eventId, null, null, team.table_name);
     const teamScores = allScores.filter(s => s.team_name === team.name);
 
     // Group scores by round
@@ -646,7 +586,7 @@ router.get('/scores', requireParticipant, async (req, res) => {
     });
 
     // Get division results for current round
-    const allResults = await db.getTableResults(round, null);
+    const allResults = await db.getTableResults(req.eventId, round, null);
     const teamDivision = team.division || 'Unassigned';
     const divisionResults = allResults[teamDivision] || [];
     const teamRank = divisionResults.findIndex(t => t.team_name === team.name) + 1;

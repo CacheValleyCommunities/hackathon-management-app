@@ -7,6 +7,15 @@ const emailService = require('../services/email');
 // Initialize email service
 emailService.init();
 
+const sessionPayload = (user) => ({
+  id: user.id,
+  email: user.email,
+  name: user.name,
+  role: user.role === 'admin' ? 'admin' : 'user',
+  account_type: user.account_type || 'individual',
+  school_name: user.school_name || null
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-jwt-secret';
 const JWT_EXPIRES_IN = '7d'; // Token valid for 7 days
 
@@ -19,14 +28,14 @@ router.get('/login', async (req, res) => {
       try {
         jwt.verify(token, JWT_SECRET);
         // Valid token, redirect to dashboard
-        return res.redirect('/');
+        return res.redirect('/events');
       } catch (err) {
         // Invalid token, clear it and show login
         res.clearCookie('token');
       }
     }
     
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     res.render('auth/login', { 
       title: `${eventSettings.event_name} Sign In`,
       eventName: eventSettings.event_name,
@@ -50,7 +59,7 @@ router.get('/login', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email } = req.body;
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     
     if (!email || !email.includes('@')) {
       return res.render('auth/login', {
@@ -84,7 +93,7 @@ router.post('/login', async (req, res) => {
     }
   } catch (error) {
     console.error('Login error:', error);
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     res.render('auth/login', {
       title: `${eventSettings.event_name} Sign In`,
       eventName: eventSettings.event_name,
@@ -107,7 +116,7 @@ router.get('/verify', async (req, res) => {
     const tokenData = await db.validateMagicToken(token);
 
     if (!tokenData) {
-      const eventSettings = await db.getEventSettings();
+      const eventSettings = await db.getEventSettings(req.eventId);
       return res.render('auth/login', {
         title: `${eventSettings.event_name} Sign In`,
         eventName: eventSettings.event_name,
@@ -140,7 +149,7 @@ router.get('/verify', async (req, res) => {
         email: normalizedEmail,
         tokenData: tokenData
       };
-      const eventSettings = await db.getEventSettings();
+      const eventSettings = await db.getEventSettings(req.eventId);
       return res.render('auth/accept-policies', {
         title: 'Accept Policies',
         eventSettings,
@@ -149,14 +158,7 @@ router.get('/verify', async (req, res) => {
     }
 
     // Create JWT token
-    const jwtPayload = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: roleInfo.role || 'judge',
-      team_id: roleInfo.team_id || null,
-      team_name: userWithTeam?.team_name || null
-    };
+    const jwtPayload = sessionPayload(user);
 
     const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
@@ -172,16 +174,10 @@ router.get('/verify', async (req, res) => {
     req.session.user = jwtPayload;
     req.session.currentRound = req.session.currentRound || 1;
 
-    // Redirect based on role
-    const role = jwtPayload.role;
-    if (role === 'participant') {
-      return res.redirect('/participant');
-    }
-    
-    res.redirect('/');
+    return res.redirect('/events');
   } catch (error) {
     console.error('Verify error:', error);
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     res.render('auth/login', {
       title: `${eventSettings.event_name} Sign In`,
       eventName: eventSettings.event_name,
@@ -223,7 +219,7 @@ router.get('/accept-policies', async (req, res) => {
     return res.redirect('/auth/login');
   }
   
-  const eventSettings = await db.getEventSettings();
+  const eventSettings = await db.getEventSettings(req.eventId);
   res.render('auth/accept-policies', {
     title: 'Accept Policies',
     eventSettings,
@@ -245,7 +241,7 @@ router.post('/accept-policies', async (req, res) => {
 
     // Validate policy acceptance
     if (!privacyPolicyAccepted || !termsAccepted || !acceptableUseAccepted) {
-      const eventSettings = await db.getEventSettings();
+      const eventSettings = await db.getEventSettings(req.eventId);
       return res.render('auth/accept-policies', {
         title: 'Accept Policies',
         eventSettings,
@@ -257,7 +253,7 @@ router.post('/accept-policies', async (req, res) => {
     // Validate guardian email for users under 18
     const isUnder18Bool = isUnder18 === '1' || isUnder18 === true;
     if (isUnder18Bool && (!guardianEmail || !guardianEmail.trim() || !guardianEmail.includes('@'))) {
-      const eventSettings = await db.getEventSettings();
+      const eventSettings = await db.getEventSettings(req.eventId);
       return res.render('auth/accept-policies', {
         title: 'Accept Policies',
         eventSettings,
@@ -298,14 +294,7 @@ router.post('/accept-policies', async (req, res) => {
     const roleInfo = await db.getUserRole(user.email);
 
     // Create JWT token
-    const jwtPayload = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: roleInfo.role || 'judge',
-      team_id: roleInfo.team_id || null,
-      team_name: userWithTeam?.team_name || null
-    };
+    const jwtPayload = sessionPayload(user);
 
     const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
@@ -322,13 +311,7 @@ router.post('/accept-policies', async (req, res) => {
     req.session.currentRound = req.session.currentRound || 1;
     delete req.session.pendingAuth;
 
-    // Redirect based on role
-    const role = jwtPayload.role;
-    if (role === 'participant') {
-      return res.redirect('/participant');
-    }
-    
-    res.redirect('/');
+    return res.redirect('/events');
   } catch (error) {
     console.error('Accept policies error:', error);
     
@@ -338,17 +321,7 @@ router.post('/accept-policies', async (req, res) => {
       try {
         const user = await db.getUserByEmail(email.toLowerCase().trim());
         if (user) {
-          const userWithTeam = await db.getUserWithTeam(user.email);
-          const roleInfo = await db.getUserRole(user.email);
-          
-          const jwtPayload = {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: roleInfo.role || 'judge',
-            team_id: roleInfo.team_id || null,
-            team_name: userWithTeam?.team_name || null
-          };
+          const jwtPayload = sessionPayload(user);
 
           const jwtToken = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
@@ -360,21 +333,15 @@ router.post('/accept-policies', async (req, res) => {
           });
 
           req.session.user = jwtPayload;
-          req.session.currentRound = req.session.currentRound || 1;
           delete req.session.pendingAuth;
-
-          const role = jwtPayload.role;
-          if (role === 'participant') {
-            return res.redirect('/participant');
-          }
-          return res.redirect('/');
+          return res.redirect('/events');
         }
       } catch (recoveryError) {
         console.error('Error during recovery login:', recoveryError);
       }
     }
     
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     res.render('auth/accept-policies', {
       title: 'Accept Policies',
       eventSettings,

@@ -3,12 +3,27 @@ const router = express.Router();
 const db = require('../db/database');
 const { checkAndReturnError } = require('../middleware/validation');
 
+router.use((req, res, next) => {
+  if (!req.session.user) return res.redirect('/auth/login');
+  if (!req.eventId) return res.redirect('/events');
+  if (!req.eventSettings || req.eventSettings.status !== 'open') {
+    return res.status(403).render('error', { message: 'Registration is closed for this event.' });
+  }
+  res.locals.isSchool = req.session.user.account_type === 'school';
+  next();
+});
+
 // GET registration form page
 router.get('/', async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
-    const tables = await db.getTableNames();
-    const categories = await db.getCategories() || [];
+    const eventSettings = req.eventSettings || await db.getEventSettings(req.eventId);
+    const tables = await db.getTableNames(req.eventId);
+    const categories = await db.getCategories(req.eventId) || [];
+    if (req.session.user.account_type !== 'school') {
+      const user = await db.getUserByEmail(req.session.user.email);
+      const existing = user ? await db.getIndividualTeam(req.eventId, user.id) : null;
+      if (existing) return res.redirect('/participant');
+    }
     res.render('register', {
       title: 'Team Registration',
       error: null,
@@ -42,9 +57,10 @@ router.post('/', async (req, res) => {
     } = req.body;
 
     // Load data once
-    eventSettings = await db.getEventSettings();
-    allTables = await db.getTableNames();
-    const categories = await db.getCategories() || [];
+    eventSettings = req.eventSettings || await db.getEventSettings(req.eventId);
+    allTables = await db.getTableNames(req.eventId);
+    const categories = await db.getCategories(req.eventId) || [];
+    const isSchool = req.session.user.account_type === 'school';
 
     // Validation
     if (!teamName || !tableName || !projectName) {
@@ -94,15 +110,23 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Validate age and email requirements
-    const isUnder18Bool = isUnder18 === '1' || isUnder18 === true;
+    if (isSchool && (teamMembers || isUnder18 || guardianEmail)) {
+      return res.render('register', {
+        title: 'Team Registration',
+        error: 'School accounts register teams with chaperone contact details only. Do not submit student names, ages, or guardian emails.',
+        success: null,
+        divisions: eventSettings.divisions || [],
+        tables: allTables,
+        categories
+      });
+    }
 
-    // Determine the contact email to use
-    // For users under 18: guardian email is required, contact email is optional (use guardian if not provided)
-    // For users 18+: contact email is required
-    let finalContactEmail = contactEmail ? contactEmail.trim() : null;
+    const isUnder18Bool = !isSchool && (isUnder18 === '1' || isUnder18 === true);
+    let finalContactEmail = isSchool ? req.session.user.email : (contactEmail ? contactEmail.trim() : null);
 
-    if (isUnder18Bool) {
+    if (isSchool) {
+      // Contact is the signed-in chaperone.
+    } else if (isUnder18Bool) {
       if (!guardianEmail || !guardianEmail.trim() || !guardianEmail.includes('@')) {
         return res.render('register', {
           title: 'Team Registration',
@@ -156,11 +180,11 @@ router.post('/', async (req, res) => {
 
     if (!allTables.includes(normalizedTableName)) {
       // Create table if it doesn't exist
-      await db.syncTables([{ name: normalizedTableName }]);
+      await db.syncTables(req.eventId, [{ name: normalizedTableName }]);
     }
 
     // Check if team name already exists
-    const existingTeams = await db.getTeams();
+    const existingTeams = await db.getTeams(req.eventId);
     const teamExists = existingTeams.some(t => t.name.toLowerCase() === teamName.toLowerCase());
 
     if (teamExists) {
@@ -174,7 +198,21 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Parse team members
+    const actingUser = await db.getUserByEmail(req.session.user.email);
+    if (!isSchool) {
+      const existingIndividual = await db.getIndividualTeam(req.eventId, actingUser.id);
+      if (existingIndividual) {
+        return res.render('register', {
+          title: 'Team Registration',
+          error: 'You already have a team for this event.',
+          success: null,
+          divisions: eventSettings.divisions || [],
+          tables: allTables,
+          categories
+        });
+      }
+    }
+
     let teamMembersArray = [];
     if (teamMembers) {
       try {
@@ -195,33 +233,20 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Determine team leader email
-    // For under 18: use guardian email as team leader email (since we don't collect participant email)
-    // For 18+: use logged-in user's email if available, otherwise contact email
-    let teamLeaderEmail = null;
-    if (isUnder18Bool && guardianEmail) {
+    let teamLeaderEmail = req.session.user.email;
+    let teamContactEmail = isSchool ? req.session.user.email : null;
+    if (!isSchool && isUnder18Bool && guardianEmail) {
       teamLeaderEmail = guardianEmail.trim();
-    } else if (req.session.user && req.session.user.email) {
-      teamLeaderEmail = req.session.user.email;
-    } else if (finalContactEmail) {
-      teamLeaderEmail = finalContactEmail;
-    }
-
-    // Determine contact email for team
-    // For under 18: use guardian email as contact email (since participant email not collected)
-    // For 18+: use contact email if provided
-    let teamContactEmail = null;
-    if (isUnder18Bool && guardianEmail) {
       teamContactEmail = guardianEmail.trim();
-    } else if (finalContactEmail) {
+    } else if (!isSchool && finalContactEmail) {
       teamContactEmail = finalContactEmail;
     }
 
     // Parse category ID
     const categoryIdInt = categoryId && categoryId !== '' ? parseInt(categoryId) : null;
 
-    // Create team (default to unpublished - teams can publish later)
     const team = await db.createTeam({
+      event_id: req.eventId,
       name: teamName.trim(),
       table_name: normalizedTableName,
       project_name: projectName.trim(),
@@ -230,62 +255,39 @@ router.post('/', async (req, res) => {
       website_link: websiteLink ? websiteLink.trim() : null,
       division: division || null,
       category_id: categoryIdInt,
-      is_published: false, // Default to unpublished
-      team_members: teamMembersArray.length > 0 ? teamMembersArray : null,
-      team_leader_email: teamLeaderEmail
+      is_published: false,
+      team_members: isSchool ? null : (teamMembersArray.length > 0 ? teamMembersArray : null),
+      team_leader_email: teamLeaderEmail,
+      owner_user_id: actingUser.id,
+      registration_type: isSchool ? 'school' : 'individual'
     });
 
-    // Create/update user account if applicable
-    // For under 18: create account using guardian email (since participant email not collected)
-    // For 18+: create account using contact email or logged-in user email
     const policyData = {
       privacy_policy_accepted: true,
       terms_accepted: true,
       acceptable_use_accepted: true,
       policies_accepted_at: new Date().toISOString(),
       is_under_18: isUnder18Bool,
-      guardian_email: isUnder18Bool && guardianEmail ? guardianEmail.trim() : null,
+      guardian_email: !isSchool && isUnder18Bool && guardianEmail ? guardianEmail.trim() : null,
       email_preferences: emailPreferences === '1' || emailPreferences === true
     };
 
-    if (isUnder18Bool && guardianEmail) {
-      // For under 18, use guardian email for account creation
-      const guardianEmailLower = guardianEmail.toLowerCase().trim();
-      const existingUser = await db.getUserByEmail(guardianEmailLower);
-
-      if (existingUser) {
-        await db.updateUser(guardianEmailLower, {
-          role: 'participant',
-          team_id: team.id,
-          ...policyData
-        });
-      } else {
-        await db.createUser(guardianEmailLower, null, 'participant', team.id, policyData);
-      }
-    } else if (req.session.user && !req.session.user.team_id && finalContactEmail) {
-      // If logged in and contact email provided, link to team
-      const userEmail = finalContactEmail.toLowerCase();
-      const existingUser = await db.getUserByEmail(userEmail);
-
-      if (existingUser) {
-        await db.updateUser(userEmail, {
-          role: 'participant',
-          team_id: team.id,
-          ...policyData
-        });
-      } else {
-        await db.createUser(userEmail, null, 'participant', team.id, policyData);
-      }
-    } else if (finalContactEmail) {
-      // If not logged in but contact email provided, create/update user
-      const userEmail = finalContactEmail.toLowerCase();
-      const existingUser = await db.getUserByEmail(userEmail);
-
-      if (existingUser) {
-        await db.updateUser(userEmail, policyData);
-      } else {
-        await db.createUser(userEmail, null, 'participant', team.id, policyData);
-      }
+    const accountEmail = (!isSchool && isUnder18Bool && guardianEmail)
+      ? guardianEmail.toLowerCase().trim()
+      : req.session.user.email;
+    let accountUser = await db.getUserByEmail(accountEmail);
+    if (accountUser) {
+      await db.updateUser(accountEmail, {
+        ...policyData,
+        team_id: team.id,
+        role: accountUser.role === 'admin' ? 'admin' : 'user'
+      });
+    } else {
+      accountUser = await db.createUser(accountEmail, null, 'user', team.id, policyData);
+    }
+    await db.upsertMembership(accountUser.id, req.eventId, isSchool ? 'chaperone' : 'participant');
+    if (accountEmail !== req.session.user.email) {
+      await db.updateTeam(team.id, { owner_user_id: accountUser.id });
     }
 
     // Send confirmation email
@@ -353,11 +355,11 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('Registration error:', error);
     // Ensure we have the data for error rendering
-    if (!eventSettings) eventSettings = await db.getEventSettings();
-    if (!allTables) allTables = await db.getTableNames();
+    if (!eventSettings) eventSettings = req.eventSettings || await db.getEventSettings(req.eventId);
+    if (!allTables) allTables = await db.getTableNames(req.eventId);
     let categories = [];
     try {
-      categories = await db.getCategories();
+      categories = await db.getCategories(req.eventId);
     } catch (catError) {
       console.error('Error loading categories:', catError);
     }

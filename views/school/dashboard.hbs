@@ -1,0 +1,33 @@
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-4xl font-bold text-gray-900 tracking-tight">{{#if schoolName}}{{schoolName}}{{else}}School teams{{/if}}</h1>
+            <p class="text-gray-600 mt-2">Register teams and projects for {{eventSettings.event_name}} without student names, emails, or ages.</p>
+        </div>
+        {{#if registrationOpen}}
+        <a href="/register" class="px-4 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800">Add team</a>
+        {{/if}}
+    </div>
+
+    {{#if teams.length}}
+    <div class="space-y-4">
+        {{#each teams}}
+        <div class="border border-gray-200 rounded-lg p-5">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                    <h2 class="text-xl font-semibold text-gray-900">{{this.name}}</h2>
+                    <p class="text-gray-700 mt-1">{{this.project_name}}</p>
+                    <p class="text-sm text-gray-500 mt-2">Table {{this.table_name}}{{#if this.division}} · {{this.division}}{{/if}}{{#if this.category_name}} · {{this.category_name}}{{/if}}</p>
+                </div>
+                <a href="/participant/team/edit?teamId={{this.id}}" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">Edit project</a>
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{else}}
+    <div class="border border-dashed border-gray-300 rounded-lg p-8 text-gray-600">
+        No teams yet for this event.
+        {{#if registrationOpen}}<a href="/register" class="underline">Add the first team</a>.{{/if}}
+    </div>
+    {{/if}}
+</div>

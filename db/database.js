@@ -2,8 +2,9 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const { migrateEvents, slugify } = require('./migrate-events');
 
-const DB_PATH = path.join(__dirname, 'judging.db');
+const DB_PATH = process.env.JUDGING_DB_PATH || path.join(__dirname, 'judging.db');
 
 let db = null;
 
@@ -55,7 +56,7 @@ const createTables = () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         name TEXT,
-        role TEXT DEFAULT 'judge',
+        role TEXT DEFAULT 'user',
         team_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (team_id) REFERENCES teams(id)
@@ -74,7 +75,9 @@ const createTables = () => {
           { name: 'policies_accepted_at', def: 'DATETIME' },
           { name: 'guardian_email', def: 'TEXT' },
           { name: 'email_preferences', def: 'INTEGER DEFAULT 0' },
-          { name: 'is_under_18', def: 'INTEGER DEFAULT 0' }
+          { name: 'is_under_18', def: 'INTEGER DEFAULT 0' },
+          { name: 'account_type', def: "TEXT DEFAULT 'individual'" },
+          { name: 'school_name', def: 'TEXT' }
         ];
 
         // Check all columns at once and add missing ones sequentially
@@ -151,8 +154,11 @@ const createTables = () => {
       // Tables table (stores table names)
       db.run(`CREATE TABLE IF NOT EXISTS tables (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        event_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, name),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
       )`, (err) => {
         if (err) {
           console.error('Error creating tables table:', err);
@@ -164,8 +170,11 @@ const createTables = () => {
       // Categories table (stores category names)
       db.run(`CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        event_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, name),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
       )`, (err) => {
         if (err) {
           console.error('Error creating categories table:', err);
@@ -177,7 +186,8 @@ const createTables = () => {
       // Teams table (stores team registrations)
       db.run(`CREATE TABLE IF NOT EXISTS teams (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
+        event_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
         table_name TEXT NOT NULL,
         project_name TEXT NOT NULL,
         contact_email TEXT,
@@ -185,7 +195,20 @@ const createTables = () => {
         division TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (table_name) REFERENCES tables(name)
+        category_id INTEGER,
+        is_published INTEGER DEFAULT 0,
+        team_members TEXT,
+        website_link TEXT,
+        readme_content TEXT,
+        screenshots TEXT,
+        banner_image TEXT,
+        logo_image TEXT,
+        team_leader_email TEXT,
+        owner_user_id INTEGER,
+        registration_type TEXT DEFAULT 'individual',
+        UNIQUE(event_id, name),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id),
+        FOREIGN KEY (event_id, table_name) REFERENCES tables(event_id, name)
       )`, (err) => {
         if (err) {
           console.error('Error creating teams table:', err);
@@ -209,7 +232,9 @@ const createTables = () => {
             { name: 'screenshots', def: 'TEXT' },
             { name: 'banner_image', def: 'TEXT' },
             { name: 'logo_image', def: 'TEXT' },
-            { name: 'team_leader_email', def: 'TEXT' }
+            { name: 'team_leader_email', def: 'TEXT' },
+            { name: 'owner_user_id', def: 'INTEGER' },
+            { name: 'registration_type', def: "TEXT DEFAULT 'individual'" }
           ];
 
           columnsToAdd.forEach(col => {
@@ -272,6 +297,7 @@ const createTables = () => {
       // Scores table (stores scores locally for editing)
       db.run(`CREATE TABLE IF NOT EXISTS scores (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
         judge_email TEXT NOT NULL,
         team_name TEXT NOT NULL,
         table_name TEXT NOT NULL,
@@ -280,7 +306,8 @@ const createTables = () => {
         notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(judge_email, team_name, round)
+        UNIQUE(event_id, judge_email, team_name, round),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
       )`, (err) => {
         if (err) {
           console.error('Error creating scores table:', err);
@@ -292,13 +319,15 @@ const createTables = () => {
       // Judge team assignments (tracks which judges have judged which teams)
       db.run(`CREATE TABLE IF NOT EXISTS judge_team_assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
         judge_email TEXT NOT NULL,
         team_name TEXT NOT NULL,
         round INTEGER NOT NULL,
         assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed BOOLEAN DEFAULT 0,
         locked_at DATETIME,
-        UNIQUE(judge_email, team_name, round)
+        UNIQUE(event_id, judge_email, team_name, round),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
       )`, (err) => {
         if (err) {
           console.error('Error creating judge_team_assignments table:', err);
@@ -307,10 +336,27 @@ const createTables = () => {
         db.run(`ALTER TABLE judge_team_assignments ADD COLUMN locked_at DATETIME`, () => { });
       });
 
+      db.run(`CREATE TABLE IF NOT EXISTS tie_breaks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        division TEXT NOT NULL,
+        team_name TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL,
+        UNIQUE(event_id, division, team_name, round),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating tie_breaks table:', err);
+        }
+      });
+
       // Event settings table
       db.run(`CREATE TABLE IF NOT EXISTS event_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_name TEXT DEFAULT 'Hackathon',
+        slug TEXT,
+        status TEXT DEFAULT 'open',
         start_date TEXT,
         end_date TEXT,
         divisions TEXT,
@@ -333,10 +379,13 @@ const createTables = () => {
         db.run(`ALTER TABLE event_settings ADD COLUMN event_dates_text TEXT`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN judging_locked INTEGER DEFAULT 0`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN winners TEXT DEFAULT '{}'`, () => { });
+        db.run(`ALTER TABLE event_settings ADD COLUMN slug TEXT`, () => { });
+        db.run(`ALTER TABLE event_settings ADD COLUMN status TEXT DEFAULT 'open'`, () => { });
 
         // Newsletter sends table (tracks newsletter sends to prevent duplicates)
         db.run(`CREATE TABLE IF NOT EXISTS newsletter_sends (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER,
         send_hash TEXT UNIQUE NOT NULL,
         subject TEXT NOT NULL,
         content TEXT NOT NULL,
@@ -351,17 +400,10 @@ const createTables = () => {
             console.error('Error creating newsletter_sends table:', err);
           }
         });
-
-        // Initialize default settings if table is empty
-        db.get('SELECT COUNT(*) as count FROM event_settings', [], (err, row) => {
-          if (!err && row.count === 0) {
-            db.run('INSERT INTO event_settings (event_name, divisions, current_round, locked_rounds) VALUES (?, ?, ?, ?)',
-              ['Hackathon', '[]', 1, '[]'], () => { });
-          }
-        });
       });
 
       // Create indexes
+      db.run(`CREATE INDEX IF NOT EXISTS idx_tie_breaks_lookup ON tie_breaks(division, round)`, () => { });
       db.run(`CREATE INDEX IF NOT EXISTS idx_scores_judge ON scores(judge_email)`, () => { });
       db.run(`CREATE INDEX IF NOT EXISTS idx_scores_team ON scores(team_name, round)`, () => { });
       db.run(`CREATE INDEX IF NOT EXISTS idx_scores_table ON scores(table_name, round)`, () => { });
@@ -371,14 +413,14 @@ const createTables = () => {
         // Wait a bit for column migrations to complete, then initialize default admin
         // This ensures all ALTER TABLE statements have finished
         setTimeout(() => {
-          initializeDefaultAdmin().then(() => {
+          migrateEvents(db).then(() => initializeDefaultAdmin()).then(() => {
             console.log('Database initialization complete');
             resolve();
           }).catch((err) => {
             console.error('Error during initialization:', err);
             resolve(); // Don't fail initialization if setup fails
           });
-        }, 100); // Small delay to ensure migrations complete
+        }, 250); // Small delay to ensure column migrations complete
       });
     });
   });
@@ -441,7 +483,7 @@ const getUserByEmail = (email) => {
   });
 };
 
-const createUser = (email, name = null, role = 'judge', teamId = null, policyData = {}) => {
+const createUser = (email, name = null, role = 'user', teamId = null, policyData = {}) => {
   return new Promise((resolve, reject) => {
     const fields = ['email', 'name', 'role', 'team_id'];
     const values = [email, name, role, teamId];
@@ -474,6 +516,14 @@ const createUser = (email, name = null, role = 'judge', teamId = null, policyDat
     if (policyData.is_under_18 !== undefined) {
       fields.push('is_under_18');
       values.push(policyData.is_under_18 ? 1 : 0);
+    }
+    if (policyData.account_type !== undefined) {
+      fields.push('account_type');
+      values.push(policyData.account_type || 'individual');
+    }
+    if (policyData.school_name !== undefined) {
+      fields.push('school_name');
+      values.push(policyData.school_name || null);
     }
 
     const placeholders = fields.map(() => '?').join(', ');
@@ -532,6 +582,14 @@ const updateUser = (email, updates) => {
       fields.push('is_under_18 = ?');
       values.push(updates.is_under_18 ? 1 : 0);
     }
+    if (updates.account_type !== undefined) {
+      fields.push('account_type = ?');
+      values.push(updates.account_type || 'individual');
+    }
+    if (updates.school_name !== undefined) {
+      fields.push('school_name = ?');
+      values.push(updates.school_name || null);
+    }
 
     if (fields.length === 0) {
       return resolve();
@@ -548,9 +606,9 @@ const updateUser = (email, updates) => {
 
 const getUserRole = (email) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT role, team_id FROM users WHERE email = ?', [email], (err, row) => {
+    db.get('SELECT role, team_id, account_type FROM users WHERE email = ?', [email], (err, row) => {
       if (err) reject(err);
-      else resolve(row ? { role: row.role, team_id: row.team_id } : { role: 'judge', team_id: null });
+      else resolve(row ? { role: row.role, team_id: row.team_id, account_type: row.account_type || 'individual' } : { role: 'user', team_id: null, account_type: 'individual' });
     });
   });
 };
@@ -626,12 +684,12 @@ const markTokenAsUsed = (token) => {
 };
 
 // Table operations
-const syncTables = (tables) => {
+const syncTables = (eventId, tables) => {
   return new Promise((resolve, reject) => {
-    const stmt = db.prepare('INSERT OR REPLACE INTO tables (name, updated_at) VALUES (?, datetime("now"))');
+    const stmt = db.prepare('INSERT OR IGNORE INTO tables (event_id, name, updated_at) VALUES (?, ?, datetime("now"))');
 
     tables.forEach(table => {
-      stmt.run(table.name);
+      stmt.run(eventId, table.name);
     });
 
     stmt.finalize((err) => {
@@ -642,7 +700,7 @@ const syncTables = (tables) => {
 };
 
 // Initialize chess board-style tables (A1-A10 through P1-P10)
-const initializeChessBoardTables = () => {
+const initializeChessBoardTables = (eventId) => {
   return new Promise((resolve, reject) => {
     const tables = [];
     const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
@@ -653,35 +711,59 @@ const initializeChessBoardTables = () => {
       }
     });
 
-    syncTables(tables).then(resolve).catch(reject);
+    syncTables(eventId, tables).then(resolve).catch(reject);
   });
 };
 
-const getTables = () => {
+const getTables = (eventId) => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM tables ORDER BY name', [], (err, rows) => {
+    db.all('SELECT * FROM tables WHERE event_id = ? ORDER BY name', [eventId], (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
   });
 };
 
-const getTableNames = () => {
+const getTableNames = (eventId) => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT name FROM tables ORDER BY name', [], (err, rows) => {
+    db.all('SELECT name FROM tables WHERE event_id = ? ORDER BY name', [eventId], (err, rows) => {
       if (err) reject(err);
       else resolve(rows.map(r => r.name));
     });
   });
 };
 
-// Category operations
-const syncCategories = (categories) => {
+const deleteTable = (eventId, name) => {
   return new Promise((resolve, reject) => {
-    const stmt = db.prepare('INSERT OR REPLACE INTO categories (name, updated_at) VALUES (?, datetime("now"))');
+    db.run('DELETE FROM tables WHERE event_id = ? AND name = ?', [eventId, name], function (err) {
+      if (err) reject(err);
+      else resolve({ deleted: this.changes > 0 });
+    });
+  });
+};
+
+const deleteTables = (eventId, names) => {
+  return new Promise((resolve, reject) => {
+    if (!names.length) return resolve({ deleted: 0 });
+    const placeholders = names.map(() => '?').join(',');
+    db.run(
+      `DELETE FROM tables WHERE event_id = ? AND name IN (${placeholders})`,
+      [eventId, ...names],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ deleted: this.changes });
+      }
+    );
+  });
+};
+
+// Category operations
+const syncCategories = (eventId, categories) => {
+  return new Promise((resolve, reject) => {
+    const stmt = db.prepare('INSERT OR IGNORE INTO categories (event_id, name, updated_at) VALUES (?, ?, datetime("now"))');
 
     categories.forEach(category => {
-      stmt.run(category.name);
+      stmt.run(eventId, category.name);
     });
 
     stmt.finalize((err) => {
@@ -691,20 +773,29 @@ const syncCategories = (categories) => {
   });
 };
 
-const getCategories = () => {
+const getCategories = (eventId) => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM categories ORDER BY name', [], (err, rows) => {
+    db.all('SELECT * FROM categories WHERE event_id = ? ORDER BY name', [eventId], (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
   });
 };
 
-const getCategoryNames = () => {
+const getCategoryNames = (eventId) => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT name FROM categories ORDER BY name', [], (err, rows) => {
+    db.all('SELECT name FROM categories WHERE event_id = ? ORDER BY name', [eventId], (err, rows) => {
       if (err) reject(err);
       else resolve(rows.map(r => r.name));
+    });
+  });
+};
+
+const deleteCategory = (eventId, id) => {
+  return new Promise((resolve, reject) => {
+    db.run('DELETE FROM categories WHERE event_id = ? AND id = ?', [eventId, id], function (err) {
+      if (err) reject(err);
+      else resolve({ deleted: this.changes > 0 });
     });
   });
 };
@@ -718,9 +809,9 @@ const getCategoryById = (id) => {
   });
 };
 
-const getCategoryByName = (name) => {
+const getCategoryByName = (eventId, name) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM categories WHERE name = ?', [name], (err, row) => {
+    db.get('SELECT * FROM categories WHERE event_id = ? AND name = ?', [eventId, name], (err, row) => {
       if (err) reject(err);
       else resolve(row);
     });
@@ -728,12 +819,22 @@ const getCategoryByName = (name) => {
 };
 
 // Team operations
-const createTeam = (teamData) => {
+const createTeam = async (teamData) => {
+  const registrationType = teamData.registration_type || 'individual';
+  if (registrationType !== 'school' && teamData.owner_user_id) {
+    const existing = await getIndividualTeam(teamData.event_id, teamData.owner_user_id);
+    if (existing) {
+      const error = new Error('This account already has a team for this event');
+      error.code = 'INDIVIDUAL_TEAM_EXISTS';
+      throw error;
+    }
+  }
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO teams (name, table_name, project_name, contact_email, github_link, division, category_id, is_published, team_members, website_link, readme_content, banner_image, logo_image, team_leader_email, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
+      `INSERT INTO teams (event_id, name, table_name, project_name, contact_email, github_link, division, category_id, is_published, team_members, website_link, readme_content, banner_image, logo_image, team_leader_email, owner_user_id, registration_type, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
       [
+        teamData.event_id,
         teamData.name,
         teamData.table_name,
         teamData.project_name,
@@ -742,16 +843,18 @@ const createTeam = (teamData) => {
         teamData.division || null,
         teamData.category_id || null,
         teamData.is_published !== undefined ? (teamData.is_published ? 1 : 0) : 0,
-        teamData.team_members ? JSON.stringify(teamData.team_members) : null,
+        teamData.registration_type === 'school' ? null : (teamData.team_members ? JSON.stringify(teamData.team_members) : null),
         teamData.website_link || null,
         teamData.readme_content || null,
         teamData.banner_image || null,
         teamData.logo_image || null,
-        teamData.team_leader_email || null
+        teamData.team_leader_email || null,
+        teamData.owner_user_id || null,
+        teamData.registration_type || 'individual'
       ],
       function (err) {
         if (err) reject(err);
-        else resolve({ id: this.lastID, name: teamData.name, table_name: teamData.table_name, project_name: teamData.project_name, contact_email: teamData.contact_email, github_link: teamData.github_link, division: teamData.division || null, category_id: teamData.category_id || null, is_published: teamData.is_published || false });
+        else resolve({ id: this.lastID, ...teamData, registration_type: teamData.registration_type || 'individual' });
       }
     );
   });
@@ -774,21 +877,23 @@ const syncTeams = (teams) => {
   });
 };
 
-const getTeams = (tableName = null, includeSensitive = false) => {
+const getTeams = (eventId, tableName = null, includeSensitive = false) => {
   return new Promise((resolve, reject) => {
     // Exclude team_leader_email unless explicitly requested (admin only)
     const sensitiveFields = includeSensitive ? ', t.team_leader_email' : '';
-    let query = `SELECT t.id, t.name, t.table_name, t.project_name, t.contact_email, 
+    let query = `SELECT t.id, t.event_id, t.name, t.table_name, t.project_name, t.contact_email, 
                         t.github_link, t.website_link, t.division, t.category_id, 
                         c.name as category_name, t.is_published, t.team_members, 
                         t.readme_content, t.banner_image, t.logo_image, t.screenshots, 
+                        t.owner_user_id, t.registration_type,
                         t.created_at, t.updated_at${sensitiveFields}
                  FROM teams t
-                 LEFT JOIN categories c ON t.category_id = c.id`;
-    const params = [];
+                 LEFT JOIN categories c ON t.category_id = c.id
+                 WHERE t.event_id = ?`;
+    const params = [eventId];
 
     if (tableName) {
-      query += ' WHERE t.table_name = ?';
+      query += ' AND t.table_name = ?';
       params.push(tableName);
     }
 
@@ -821,26 +926,32 @@ const getTeams = (tableName = null, includeSensitive = false) => {
         }
         // Convert is_published to boolean
         row.is_published = row.is_published === 1;
+        if (row.registration_type === 'school' && !includeSensitive) {
+          row.team_members = [];
+        }
       });
       resolve(rows);
     });
   });
 };
 
-const getTeamTable = (teamName) => {
+const getTeamTable = (eventId, teamName) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT table_name FROM teams WHERE name = ?', [teamName], (err, row) => {
+    db.get('SELECT table_name FROM teams WHERE event_id = ? AND name = ?', [eventId, teamName], (err, row) => {
       if (err) reject(err);
       else resolve(row ? row.table_name : null);
     });
   });
 };
 
-// Check if a user is the team leader (for authorization only, doesn't expose team_leader_email)
+// Check if a user is the team leader or the account that owns the team.
 const isTeamLeader = (teamId, userEmail) => {
   return new Promise((resolve, reject) => {
     db.get(
-      'SELECT contact_email, team_leader_email FROM teams WHERE id = ?',
+      `SELECT t.contact_email, t.team_leader_email, t.owner_user_id, u.email AS owner_email
+       FROM teams t
+       LEFT JOIN users u ON u.id = t.owner_user_id
+       WHERE t.id = ?`,
       [teamId],
       (err, row) => {
         if (err) {
@@ -854,7 +965,8 @@ const isTeamLeader = (teamId, userEmail) => {
         const email = userEmail.toLowerCase();
         const isLeader =
           (row.contact_email && row.contact_email.toLowerCase() === email) ||
-          (row.team_leader_email && row.team_leader_email.toLowerCase() === email);
+          (row.team_leader_email && row.team_leader_email.toLowerCase() === email) ||
+          (row.owner_email && row.owner_email.toLowerCase() === email);
         resolve(isLeader);
       }
     );
@@ -865,10 +977,11 @@ const getTeamById = (id, includeSensitive = false) => {
   return new Promise((resolve, reject) => {
     // Exclude team_leader_email unless explicitly requested (admin only)
     const sensitiveFields = includeSensitive ? ', t.team_leader_email' : '';
-    const query = `SELECT t.id, t.name, t.table_name, t.project_name, t.contact_email, 
+    const query = `SELECT t.id, t.event_id, t.name, t.table_name, t.project_name, t.contact_email, 
                           t.github_link, t.website_link, t.division, t.category_id,
                           c.name as category_name, t.is_published, t.team_members, 
                           t.readme_content, t.banner_image, t.logo_image, t.screenshots, 
+                          t.owner_user_id, t.registration_type,
                           t.created_at, t.updated_at${sensitiveFields}
                    FROM teams t
                    LEFT JOIN categories c ON t.category_id = c.id
@@ -900,6 +1013,9 @@ const getTeamById = (id, includeSensitive = false) => {
         }
         // Convert is_published to boolean
         row.is_published = row.is_published === 1;
+        if (row.registration_type === 'school' && !includeSensitive) {
+          row.team_members = [];
+        }
       }
       resolve(row);
     });
@@ -908,6 +1024,14 @@ const getTeamById = (id, includeSensitive = false) => {
 
 const updateTeam = (id, teamData) => {
   return new Promise((resolve, reject) => {
+    db.get('SELECT registration_type FROM teams WHERE id = ?', [id], (lookupErr, existing) => {
+      if (lookupErr) {
+        reject(lookupErr);
+        return;
+      }
+      if (existing && existing.registration_type === 'school') {
+        teamData = { ...teamData, team_members: null };
+      }
     // Build dynamic update query to only update provided fields
     const updates = [];
     const values = [];
@@ -936,6 +1060,7 @@ const updateTeam = (id, teamData) => {
       if (err) reject(err);
       else resolve({ id, ...teamData });
     });
+    });
   });
 };
 
@@ -948,26 +1073,49 @@ const deleteTeam = (id) => {
   });
 };
 
-const getAllUsers = () => {
+const getAllUsers = (eventId) => {
   return new Promise((resolve, reject) => {
     db.all(`
-      SELECT u.*, t.name as team_name
-      FROM users u
-      LEFT JOIN teams t ON u.team_id = t.id
+      SELECT u.*, m.role AS event_role, t.name AS team_name, t.id AS membership_team_id
+      FROM event_memberships m
+      JOIN users u ON u.id = m.user_id
+      LEFT JOIN teams t ON t.event_id = m.event_id
+        AND t.owner_user_id = u.id
+        AND t.registration_type = 'individual'
+      WHERE m.event_id = ?
       ORDER BY u.created_at DESC
-    `, [], (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
+    `, [eventId], (err, rows) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      db.all(`SELECT * FROM users WHERE role = 'admin' ORDER BY created_at DESC`, [], (adminErr, admins) => {
+        if (adminErr) {
+          reject(adminErr);
+          return;
+        }
+        const seen = new Set((rows || []).map(row => row.id));
+        const members = (rows || []).map(row => ({
+          ...row,
+          role: row.event_role || row.role
+        }));
+        (admins || []).forEach(admin => {
+          if (!seen.has(admin.id)) {
+            members.push({ ...admin, event_role: null, team_name: null });
+          }
+        });
+        resolve(members);
+      });
     });
   });
 };
 
 // Score operations
-const getScore = (judgeEmail, teamName, round) => {
+const getScore = (eventId, judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
     db.get(
-      'SELECT * FROM scores WHERE judge_email = ? AND team_name = ? AND round = ?',
-      [judgeEmail, teamName, round],
+      'SELECT * FROM scores WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?',
+      [eventId, judgeEmail, teamName, round],
       (err, row) => {
         if (err) reject(err);
         else resolve(row);
@@ -976,14 +1124,14 @@ const getScore = (judgeEmail, teamName, round) => {
   });
 };
 
-const saveScore = (judgeEmail, teamName, tableName, round, score, notes = null) => {
+const saveScore = (eventId, judgeEmail, teamName, tableName, round, score, notes = null) => {
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO scores (judge_email, team_name, table_name, round, score, notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime("now"))
-       ON CONFLICT(judge_email, team_name, round) 
+      `INSERT INTO scores (event_id, judge_email, team_name, table_name, round, score, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))
+       ON CONFLICT(event_id, judge_email, team_name, round) 
        DO UPDATE SET score = ?, notes = ?, table_name = ?, updated_at = datetime("now")`,
-      [judgeEmail, teamName, tableName, round, score, notes, score, notes, tableName],
+      [eventId, judgeEmail, teamName, tableName, round, score, notes, score, notes, tableName],
       function (err) {
         if (err) reject(err);
         else resolve({ id: this.lastID });
@@ -992,15 +1140,20 @@ const saveScore = (judgeEmail, teamName, tableName, round, score, notes = null) 
   });
 };
 
-const getJudgeScores = (judgeEmail, round = null, tableName = null) => {
+const getJudgeScores = (eventId, judgeEmail = null, round = null, tableName = null) => {
   return new Promise((resolve, reject) => {
     let query = `
       SELECT s.*, t.division
       FROM scores s
-      LEFT JOIN teams t ON s.team_name = t.name
-      WHERE s.judge_email = ?
+      LEFT JOIN teams t ON s.team_name = t.name AND t.event_id = s.event_id
+      WHERE s.event_id = ?
     `;
-    const params = [judgeEmail];
+    const params = [eventId];
+
+    if (judgeEmail) {
+      query += ' AND s.judge_email = ?';
+      params.push(judgeEmail);
+    }
 
     if (round) {
       query += ' AND s.round = ?';
@@ -1022,21 +1175,29 @@ const getJudgeScores = (judgeEmail, round = null, tableName = null) => {
 };
 
 // Results/Leaderboard operations - Cumulative scoring across rounds
-const getTableResults = (round, tableName = null) => {
+const scoreKey = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
+
+const getTableResults = (eventId, round, tableName = null) => {
   return new Promise((resolve, reject) => {
     let query = `
       SELECT 
         s.team_name,
         s.table_name,
         t.division,
-        SUM(s.score) as total_score,
+        ROUND(SUM(s.score), 3) as total_score,
         COUNT(DISTINCT s.judge_email) as judge_count,
-        COUNT(DISTINCT s.round) as rounds_completed
+        COUNT(DISTINCT s.round) as rounds_completed,
+        tb.sort_order as tie_sort_order
       FROM scores s
-      LEFT JOIN teams t ON s.team_name = t.name
-      WHERE s.round <= ?
+      LEFT JOIN teams t ON s.team_name = t.name AND t.event_id = s.event_id
+      LEFT JOIN tie_breaks tb
+        ON tb.event_id = s.event_id
+       AND tb.team_name = s.team_name
+       AND tb.round = ?
+       AND tb.division = COALESCE(t.division, 'Unassigned')
+      WHERE s.event_id = ? AND s.round <= ?
     `;
-    const params = [round];
+    const params = [round, eventId, round];
 
     if (tableName) {
       query += ' AND s.table_name = ?';
@@ -1044,31 +1205,53 @@ const getTableResults = (round, tableName = null) => {
     }
 
     query += `
-      GROUP BY s.team_name, s.table_name, t.division
-      ORDER BY t.division, total_score DESC
+      GROUP BY s.team_name, s.table_name, t.division, tb.sort_order
+      ORDER BY t.division, total_score DESC, COALESCE(tb.sort_order, 999999) ASC, s.team_name ASC
     `;
 
     db.all(query, params, (err, rows) => {
       if (err) reject(err);
       else {
-        // Group by division only and calculate rankings within each division
         const resultsByDivision = {};
         rows.forEach(row => {
           const division = row.division || 'Unassigned';
           if (!resultsByDivision[division]) {
             resultsByDivision[division] = [];
           }
-          resultsByDivision[division].push(row);
+          resultsByDivision[division].push({
+            ...row,
+            total_score: scoreKey(row.total_score),
+            tie_sort_order: row.tie_sort_order == null ? null : Number(row.tie_sort_order)
+          });
         });
 
-        // Add rankings within each division (1st, 2nd, 3rd, etc.)
         Object.keys(resultsByDivision).forEach(division => {
-          resultsByDivision[division].forEach((team, index) => {
-            if (index === 0) team.rank = 1;
-            else if (index === 1) team.rank = 2;
-            else if (index === 2) team.rank = 3;
-            else team.rank = index + 1;
+          const teams = resultsByDivision[division];
+          teams.forEach((team, index) => {
+            team.rank = index + 1;
+            team.division_key = division;
           });
+
+          let groupStart = 0;
+          while (groupStart < teams.length) {
+            let groupEnd = groupStart + 1;
+            while (
+              groupEnd < teams.length &&
+              teams[groupEnd].total_score === teams[groupStart].total_score
+            ) {
+              groupEnd += 1;
+            }
+            const group = teams.slice(groupStart, groupEnd);
+            const scoreTied = group.length > 1;
+            const tieResolved = scoreTied && group.every(team => team.tie_sort_order != null);
+            group.forEach((team, index) => {
+              team.scoreTied = scoreTied;
+              team.tieResolved = tieResolved;
+              team.tieGroupFirst = index === 0;
+              team.tieGroupLast = index === group.length - 1;
+            });
+            groupStart = groupEnd;
+          }
         });
 
         resolve(resultsByDivision);
@@ -1078,125 +1261,208 @@ const getTableResults = (round, tableName = null) => {
 };
 
 // Event settings operations
-const getEventSettings = () => {
+const parseEventRow = (row) => {
+  if (!row) return null;
+  let divisions = [];
+  try {
+    divisions = row.divisions ? JSON.parse(row.divisions) : [];
+  } catch (e) {
+    divisions = [];
+  }
+  let winners = {};
+  try {
+    winners = row.winners ? JSON.parse(row.winners) : {};
+  } catch (e) {
+    winners = {};
+  }
+  return {
+    ...row,
+    divisions,
+    judging_locked: row.judging_locked === 1,
+    winners,
+    status: row.status || 'open'
+  };
+};
+
+const emptyEventSettings = () => ({
+  id: null,
+  event_name: 'Hackathon',
+  slug: null,
+  status: null,
+  start_date: null,
+  end_date: null,
+  divisions: [],
+  logo_filename: null,
+  current_round: 1,
+  locked_rounds: '[]',
+  judging_locked: false,
+  winners: {}
+});
+
+const getEventById = (eventId) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM event_settings ORDER BY id DESC LIMIT 1', [], (err, row) => {
+    if (!eventId) {
+      resolve(null);
+      return;
+    }
+    db.get('SELECT * FROM event_settings WHERE id = ?', [eventId], (err, row) => {
       if (err) reject(err);
-      else {
-        if (!row) {
-          // Return default settings if none exist
-          resolve({
-            event_name: 'Hackathon',
-            start_date: null,
-            end_date: null,
-            divisions: '[]',
-            logo_filename: null
-          });
-        } else {
-          // Parse divisions JSON string
-          let divisions = [];
-          try {
-            divisions = row.divisions ? JSON.parse(row.divisions) : [];
-          } catch (e) {
-            divisions = [];
-          }
-          // Parse winners JSON string
-          let winners = {};
-          try {
-            winners = row.winners ? JSON.parse(row.winners) : {};
-          } catch (e) {
-            winners = {};
-          }
-          resolve({
-            ...row,
-            divisions,
-            judging_locked: row.judging_locked === 1,
-            winners
-          });
-        }
-      }
+      else resolve(parseEventRow(row));
     });
   });
 };
 
-const updateEventSettings = (settings) => {
+const getEventBySlug = (slug) => {
   return new Promise((resolve, reject) => {
-    const divisionsJson = Array.isArray(settings.divisions)
-      ? JSON.stringify(settings.divisions)
-      : (settings.divisions || '[]');
+    db.get('SELECT * FROM event_settings WHERE slug = ?', [slug], (err, row) => {
+      if (err) reject(err);
+      else resolve(parseEventRow(row));
+    });
+  });
+};
 
-    db.run(
-      `UPDATE event_settings 
-       SET event_name = ?, start_date = ?, end_date = ?, divisions = ?, logo_filename = ?, 
-           hero_banner_image = ?, hero_banner_link = ?, landing_page_content = ?, event_dates_text = ?,
-           updated_at = datetime("now")
-       WHERE id = (SELECT id FROM event_settings ORDER BY id DESC LIMIT 1)`,
-      [
-        settings.event_name || 'Hackathon',
-        settings.start_date || null,
-        settings.end_date || null,
-        divisionsJson,
-        settings.logo_filename || null,
-        settings.hero_banner_image || null,
-        settings.hero_banner_link || null,
-        settings.landing_page_content || null,
-        settings.event_dates_text || null
-      ],
-      function (err) {
+const listEvents = () => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT * FROM event_settings ORDER BY id ASC', [], (err, rows) => {
+      if (err) reject(err);
+      else resolve((rows || []).map(parseEventRow));
+    });
+  });
+};
+
+const listVisibleEvents = async (user) => {
+  const events = await listEvents();
+  if (user && user.role === 'admin') return events;
+  let membershipEventIds = new Set();
+  if (user && user.id) {
+    const memberships = await getMembershipsForUser(user.id);
+    membershipEventIds = new Set(memberships.map(membership => membership.event_id));
+  }
+  return events.filter(event => event.status === 'open' || membershipEventIds.has(event.id));
+};
+
+const uniqueEventSlug = (baseName, excludeId = null) => {
+  return new Promise((resolve, reject) => {
+    const base = slugify(baseName);
+    const trySlug = (candidate, attempt) => {
+      db.get('SELECT id FROM event_settings WHERE slug = ?', [candidate], (err, row) => {
         if (err) {
           reject(err);
           return;
         }
-
-        // If no rows were updated, insert instead
-        if (this.changes === 0) {
-          db.run(
-            `INSERT INTO event_settings (event_name, start_date, end_date, divisions, logo_filename, 
-                                        hero_banner_image, hero_banner_link, landing_page_content, event_dates_text, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
-            [
-              settings.event_name || 'Hackathon',
-              settings.start_date || null,
-              settings.end_date || null,
-              divisionsJson,
-              settings.logo_filename || null,
-              settings.hero_banner_image || null,
-              settings.hero_banner_link || null,
-              settings.landing_page_content || null,
-              settings.event_dates_text || null
-            ],
-            function (insertErr) {
-              if (insertErr) reject(insertErr);
-              else resolve({ id: this.lastID, ...settings, divisions: Array.isArray(settings.divisions) ? settings.divisions : JSON.parse(divisionsJson) });
-            }
-          );
-        } else {
-          resolve({ ...settings, divisions: Array.isArray(settings.divisions) ? settings.divisions : JSON.parse(divisionsJson) });
+        if (!row || (excludeId && row.id === excludeId)) {
+          resolve(candidate);
+          return;
         }
+        trySlug(`${base}-${attempt + 1}`, attempt + 1);
+      });
+    };
+    trySlug(base, 1);
+  });
+};
+
+const createEvent = async (data) => {
+  const slug = await uniqueEventSlug(data.slug || data.event_name || 'event');
+  const divisionsJson = JSON.stringify(Array.isArray(data.divisions) ? data.divisions : []);
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO event_settings (
+        event_name, slug, status, start_date, end_date, divisions, current_round, locked_rounds, winners, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, '[]', '{}', datetime("now"))`,
+      [
+        data.event_name || 'Hackathon',
+        slug,
+        data.status || 'draft',
+        data.start_date || null,
+        data.end_date || null,
+        divisionsJson
+      ],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ id: this.lastID, event_name: data.event_name || 'Hackathon', slug, status: data.status || 'draft' });
       }
     );
   });
 };
 
-const incrementRound = () => {
+const updateEventStatus = (eventId, status) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE event_settings SET status = ?, updated_at = datetime("now") WHERE id = ?`,
+      [status, eventId],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ id: eventId, status, changes: this.changes });
+      }
+    );
+  });
+};
+
+const getEventSettings = (eventId) => {
+  return new Promise((resolve, reject) => {
+    if (!eventId) {
+      resolve(emptyEventSettings());
+      return;
+    }
+    getEventById(eventId).then(resolve).catch(reject);
+  });
+};
+
+const updateEventSettings = (eventId, settings) => {
+  return new Promise((resolve, reject) => {
+    const divisionsJson = Array.isArray(settings.divisions)
+      ? JSON.stringify(settings.divisions)
+      : (settings.divisions || '[]');
+
+    const applyUpdate = (id, nextSlug) => {
+      db.run(
+        `UPDATE event_settings 
+         SET event_name = ?, slug = ?, start_date = ?, end_date = ?, divisions = ?, logo_filename = ?, 
+             hero_banner_image = ?, hero_banner_link = ?, landing_page_content = ?, event_dates_text = ?,
+             updated_at = datetime("now")
+         WHERE id = ?`,
+        [
+          settings.event_name || 'Hackathon',
+          nextSlug,
+          settings.start_date || null,
+          settings.end_date || null,
+          divisionsJson,
+          settings.logo_filename || null,
+          settings.hero_banner_image || null,
+          settings.hero_banner_link || null,
+          settings.landing_page_content || null,
+          settings.event_dates_text || null,
+          id
+        ],
+        function (err) {
+          if (err) reject(err);
+          else resolve({ id, ...settings, slug: nextSlug, divisions: Array.isArray(settings.divisions) ? settings.divisions : JSON.parse(divisionsJson) });
+        }
+      );
+    };
+
+    uniqueEventSlug(settings.event_name || 'Hackathon', eventId)
+      .then((nextSlug) => applyUpdate(eventId, nextSlug))
+      .catch(reject);
+  });
+};
+
+const incrementRound = (eventId) => {
   return new Promise(async (resolve, reject) => {
     try {
-      // Get current settings
-      const settings = await getEventSettings();
+      const settings = await getEventSettings(eventId);
       const currentRound = settings.current_round || 1;
       const lockedRounds = JSON.parse(settings.locked_rounds || '[]');
 
-      // Lock the current round
       if (!lockedRounds.includes(currentRound)) {
         lockedRounds.push(currentRound);
       }
 
-      // Increment to next round
       const nextRound = currentRound + 1;
 
       db.run(
-        'UPDATE event_settings SET current_round = ?, locked_rounds = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1',
-        [nextRound, JSON.stringify(lockedRounds)],
+        'UPDATE event_settings SET current_round = ?, locked_rounds = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [nextRound, JSON.stringify(lockedRounds), eventId],
         (err) => {
           if (err) reject(err);
           else resolve({ currentRound: nextRound, lockedRounds });
@@ -1208,59 +1474,51 @@ const incrementRound = () => {
   });
 };
 
-const isRoundLocked = (round) => {
+const isRoundLocked = (eventId, round) => {
   return new Promise(async (resolve, reject) => {
     try {
-      const settings = await getEventSettings();
+      const settings = await getEventSettings(eventId);
       const lockedRounds = JSON.parse(settings.locked_rounds || '[]');
-      resolve(lockedRounds.includes(round));
+      resolve(lockedRounds.includes(parseInt(round, 10)));
     } catch (error) {
       reject(error);
     }
   });
 };
 
-// Lock or unlock judging
-const setJudgingLocked = (locked) => {
+const setJudgingLocked = (eventId, locked) => {
   return new Promise((resolve, reject) => {
     db.run(
       `UPDATE event_settings 
        SET judging_locked = ?, updated_at = datetime("now")
-       WHERE id = (SELECT id FROM event_settings ORDER BY id DESC LIMIT 1)`,
-      [locked ? 1 : 0],
+       WHERE id = ?`,
+      [locked ? 1 : 0, eventId],
       function (err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ judging_locked: locked });
-        }
+        if (err) reject(err);
+        else resolve({ judging_locked: locked });
       }
     );
   });
 };
 
-// Set winners for divisions
-const setWinners = (winners) => {
+const setWinners = (eventId, winners) => {
   return new Promise((resolve, reject) => {
     const winnersJson = JSON.stringify(winners || {});
     db.run(
       `UPDATE event_settings 
        SET winners = ?, updated_at = datetime("now")
-       WHERE id = (SELECT id FROM event_settings ORDER BY id DESC LIMIT 1)`,
-      [winnersJson],
+       WHERE id = ?`,
+      [winnersJson, eventId],
       function (err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ winners });
-        }
+        if (err) reject(err);
+        else resolve({ winners });
       }
     );
   });
 };
 
 // Get teams with scores for a division (for winner selection)
-const getTeamsByDivisionWithScores = (division) => {
+const getTeamsByDivisionWithScores = (eventId, division) => {
   return new Promise((resolve, reject) => {
     db.all(
       `SELECT 
@@ -1273,11 +1531,11 @@ const getTeamsByDivisionWithScores = (division) => {
         COUNT(DISTINCT s.judge_email) as judge_count,
         COUNT(DISTINCT s.round) as rounds_judged
        FROM teams t
-       LEFT JOIN scores s ON t.name = s.team_name
-       WHERE t.division = ?
+       LEFT JOIN scores s ON t.name = s.team_name AND s.event_id = t.event_id
+       WHERE t.event_id = ? AND t.division = ?
        GROUP BY t.id, t.name, t.division, t.table_name, t.project_name
        ORDER BY avg_score DESC, judge_count DESC, rounds_judged DESC`,
-      [division],
+      [eventId, division],
       (err, rows) => {
         if (err) {
           reject(err);
@@ -1295,10 +1553,8 @@ const getTeamsByDivisionWithScores = (division) => {
 };
 
 // Get top team per category (for leaderboard sidebar)
-const getTopTeamPerCategory = (round) => {
+const getTopTeamPerCategory = (eventId, round) => {
   return new Promise((resolve, reject) => {
-    // Get all teams with their scores grouped by category
-    // Start from teams (not categories) to ensure we get teams with categories and scores
     db.all(
       `SELECT 
         c.id as category_id,
@@ -1311,13 +1567,13 @@ const getTopTeamPerCategory = (round) => {
         COUNT(DISTINCT s.judge_email) as judge_count,
         COUNT(DISTINCT s.round) as rounds_completed
        FROM teams t
-       INNER JOIN categories c ON t.category_id = c.id
-       LEFT JOIN scores s ON t.name = s.team_name AND s.round <= ?
-       WHERE t.category_id IS NOT NULL
+       INNER JOIN categories c ON t.category_id = c.id AND c.event_id = t.event_id
+       LEFT JOIN scores s ON t.name = s.team_name AND s.event_id = t.event_id AND s.round <= ?
+       WHERE t.event_id = ? AND t.category_id IS NOT NULL
        GROUP BY c.id, c.name, t.id, t.name, t.table_name, t.project_name
        HAVING total_score > 0 OR judge_count > 0
        ORDER BY c.name, total_score DESC, judge_count DESC`,
-      [round],
+      [round, eventId],
       (err, rows) => {
         if (err) {
           reject(err);
@@ -1369,20 +1625,19 @@ const close = () => {
 };
 
 // Get the next team assignment for a judge in the current round
-const getNextTeamForJudge = (judgeEmail, round) => {
+const getNextTeamForJudge = (eventId, judgeEmail, round) => {
   return new Promise((resolve, reject) => {
-    // Get all teams
-    db.all('SELECT name, table_name, division FROM teams ORDER BY name', [], (err, teams) => {
+    db.all('SELECT name, table_name, division FROM teams WHERE event_id = ? ORDER BY name', [eventId], (err, teams) => {
       if (err) {
         reject(err);
         return;
       }
 
-      // Get all teams this judge has EVER judged (across all rounds)
-      // This prevents a judge from judging the same team twice, ever
       db.all(
-        'SELECT DISTINCT team_name FROM judge_team_assignments WHERE judge_email = ?',
-        [judgeEmail],
+        `SELECT DISTINCT team_name FROM judge_team_assignments WHERE event_id = ? AND judge_email = ?
+         UNION
+         SELECT DISTINCT team_name FROM scores WHERE event_id = ? AND judge_email = ?`,
+        [eventId, judgeEmail, eventId, judgeEmail],
         (err, judgedTeams) => {
           if (err) {
             reject(err);
@@ -1395,15 +1650,29 @@ const getNextTeamForJudge = (judgeEmail, round) => {
           // Also check which teams this judge is already assigned to in this round
           // And which teams are currently locked
           db.all(
-            `SELECT 
-              team_name, 
-              COUNT(*) as judge_count,
-              SUM(CASE WHEN judge_email = ? THEN 1 ELSE 0 END) as already_assigned,
-              SUM(CASE WHEN completed = 0 AND locked_at IS NOT NULL AND judge_email != ? THEN 1 ELSE 0 END) as is_locked
-             FROM judge_team_assignments 
-             WHERE round = ? 
-             GROUP BY team_name`,
-            [judgeEmail, judgeEmail, round],
+            `SELECT
+              t.name as team_name,
+              (
+                SELECT COUNT(*) FROM (
+                  SELECT judge_email FROM judge_team_assignments
+                  WHERE event_id = ? AND team_name = t.name AND round = ?
+                  UNION
+                  SELECT judge_email FROM scores
+                  WHERE event_id = ? AND team_name = t.name AND round = ?
+                )
+              ) as judge_count,
+              (
+                SELECT COUNT(*) FROM judge_team_assignments
+                WHERE event_id = ? AND team_name = t.name AND round = ? AND judge_email = ?
+              ) as already_assigned,
+              (
+                SELECT COUNT(*) FROM judge_team_assignments
+                WHERE event_id = ? AND team_name = t.name AND round = ?
+                  AND completed = 0 AND locked_at IS NOT NULL AND judge_email != ?
+              ) as is_locked
+             FROM teams t
+             WHERE t.event_id = ?`,
+            [eventId, round, eventId, round, eventId, round, judgeEmail, eventId, round, judgeEmail, eventId],
             (err, teamCounts) => {
               if (err) {
                 reject(err);
@@ -1430,9 +1699,9 @@ const getNextTeamForJudge = (judgeEmail, round) => {
               db.all(
                 `SELECT team_name, MAX(assigned_at) as last_assigned
                  FROM judge_team_assignments
-                 WHERE round = ? AND completed = 1
+                 WHERE event_id = ? AND round = ? AND completed = 1
                  GROUP BY team_name`,
-                [round],
+                [eventId, round],
                 (err, lastAssignments) => {
                   if (err) {
                     reject(err);
@@ -1501,12 +1770,12 @@ const getNextTeamForJudge = (judgeEmail, round) => {
 
 // Assign a judge to a team
 // Note: For atomic locking, use lockTeamForJudge() instead
-const assignJudgeToTeam = (judgeEmail, teamName, round) => {
+const assignJudgeToTeam = (eventId, judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT OR IGNORE INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) 
-       VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)`,
-      [judgeEmail, teamName, round],
+      `INSERT OR IGNORE INTO judge_team_assignments (event_id, judge_email, team_name, round, completed, locked_at) 
+       VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+      [eventId, judgeEmail, teamName, round],
       function (err) {
         if (err) reject(err);
         else resolve({ id: this.lastID, judge_email: judgeEmail, team_name: teamName, round });
@@ -1516,13 +1785,14 @@ const assignJudgeToTeam = (judgeEmail, teamName, round) => {
 };
 
 // Mark a team assignment as completed
-const markAssignmentCompleted = (judgeEmail, teamName, round) => {
+const markAssignmentCompleted = (eventId, judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE judge_team_assignments 
-       SET completed = 1 
-       WHERE judge_email = ? AND team_name = ? AND round = ?`,
-      [judgeEmail, teamName, round],
+      `INSERT INTO judge_team_assignments (event_id, judge_email, team_name, round, completed, locked_at)
+       VALUES (?, ?, ?, ?, 1, NULL)
+       ON CONFLICT(event_id, judge_email, team_name, round)
+       DO UPDATE SET completed = 1`,
+      [eventId, judgeEmail, teamName, round],
       (err) => {
         if (err) reject(err);
         else resolve();
@@ -1532,20 +1802,35 @@ const markAssignmentCompleted = (judgeEmail, teamName, round) => {
 };
 
 // Get judge queue statistics for current round (team-based)
-const getJudgeQueueStats = (round) => {
+const getJudgeQueueStats = (eventId, round) => {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT 
+      `SELECT
         t.name as team_name,
         t.table_name,
         t.division,
-        COUNT(DISTINCT jta.judge_email) as judge_count,
-        GROUP_CONCAT(DISTINCT jta.judge_email) as judges
+        (
+          SELECT COUNT(*) FROM (
+            SELECT judge_email FROM judge_team_assignments
+            WHERE event_id = ? AND team_name = t.name AND round = ?
+            UNION
+            SELECT judge_email FROM scores
+            WHERE event_id = ? AND team_name = t.name AND round = ?
+          )
+        ) as judge_count,
+        (
+          SELECT GROUP_CONCAT(judge_email) FROM (
+            SELECT judge_email FROM judge_team_assignments
+            WHERE event_id = ? AND team_name = t.name AND round = ?
+            UNION
+            SELECT judge_email FROM scores
+            WHERE event_id = ? AND team_name = t.name AND round = ?
+          )
+        ) as judges
        FROM teams t
-       LEFT JOIN judge_team_assignments jta ON t.name = jta.team_name AND jta.round = ?
-       GROUP BY t.name
+       WHERE t.event_id = ?
        ORDER BY judge_count ASC, t.name`,
-      [round],
+      [eventId, round, eventId, round, eventId, round, eventId, round, eventId],
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -1555,15 +1840,22 @@ const getJudgeQueueStats = (round) => {
 };
 
 // Get all teams a judge has judged (across all rounds)
-const getJudgedTeamsByJudge = (judgeEmail) => {
+const getJudgedTeamsByJudge = (eventId, judgeEmail) => {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT jta.team_name, jta.round, t.table_name, t.division 
-       FROM judge_team_assignments jta
-       LEFT JOIN teams t ON jta.team_name = t.name
-       WHERE jta.judge_email = ? 
-       ORDER BY jta.round, jta.team_name`,
-      [judgeEmail],
+      `SELECT team_name, round, table_name, division FROM (
+         SELECT jta.team_name as team_name, jta.round as round, t.table_name as table_name, t.division as division
+         FROM judge_team_assignments jta
+         LEFT JOIN teams t ON jta.team_name = t.name AND t.event_id = jta.event_id
+         WHERE jta.event_id = ? AND jta.judge_email = ?
+         UNION
+         SELECT s.team_name, s.round, t.table_name, t.division
+         FROM scores s
+         LEFT JOIN teams t ON s.team_name = t.name AND t.event_id = s.event_id
+         WHERE s.event_id = ? AND s.judge_email = ?
+       )
+       ORDER BY round, team_name`,
+      [eventId, judgeEmail, eventId, judgeEmail],
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -1573,18 +1865,19 @@ const getJudgedTeamsByJudge = (judgeEmail) => {
 };
 
 // Get current incomplete assignments (locked but not completed) for a judge
-const getCurrentAssignmentsForJudge = (judgeEmail, round) => {
+const getCurrentAssignmentsForJudge = (eventId, judgeEmail, round) => {
   return new Promise((resolve, reject) => {
     db.all(
       `SELECT jta.team_name, jta.round, jta.locked_at, t.table_name, t.division 
        FROM judge_team_assignments jta
-       LEFT JOIN teams t ON jta.team_name = t.name
-       WHERE jta.judge_email = ? 
+       LEFT JOIN teams t ON jta.team_name = t.name AND t.event_id = jta.event_id
+       WHERE jta.event_id = ?
+         AND jta.judge_email = ? 
          AND jta.round = ?
          AND jta.completed = 0
          AND jta.locked_at IS NOT NULL
        ORDER BY jta.locked_at DESC`,
-      [judgeEmail, round],
+      [eventId, judgeEmail, round],
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -1594,17 +1887,18 @@ const getCurrentAssignmentsForJudge = (judgeEmail, round) => {
 };
 
 // Check if a team is currently locked by any judge
-const isTeamLocked = (teamName, round) => {
+const isTeamLocked = (eventId, teamName, round) => {
   return new Promise((resolve, reject) => {
     db.get(
       `SELECT judge_email, locked_at 
        FROM judge_team_assignments 
-       WHERE team_name = ? 
+       WHERE event_id = ?
+         AND team_name = ? 
          AND round = ? 
          AND completed = 0 
          AND locked_at IS NOT NULL
        LIMIT 1`,
-      [teamName, round],
+      [eventId, teamName, round],
       (err, row) => {
         if (err) reject(err);
         else resolve(!!row); // Return true if locked, false if not
@@ -1615,7 +1909,7 @@ const isTeamLocked = (teamName, round) => {
 
 // Atomically lock a team for a judge
 // Uses a transaction to prevent race conditions
-const lockTeamForJudge = (judgeEmail, teamName, round) => {
+const lockTeamForJudge = (eventId, judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
     // Use a transaction to ensure atomicity
     db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
@@ -1628,13 +1922,14 @@ const lockTeamForJudge = (judgeEmail, teamName, round) => {
       db.get(
         `SELECT judge_email 
          FROM judge_team_assignments 
-         WHERE team_name = ? 
+         WHERE event_id = ?
+           AND team_name = ? 
            AND round = ? 
            AND completed = 0 
            AND locked_at IS NOT NULL
            AND judge_email != ?
          LIMIT 1`,
-        [teamName, round, judgeEmail],
+        [eventId, teamName, round, judgeEmail],
         (err, existingLock) => {
           if (err) {
             db.run('ROLLBACK', () => { });
@@ -1649,14 +1944,47 @@ const lockTeamForJudge = (judgeEmail, teamName, round) => {
             return;
           }
 
+          db.get(
+            `SELECT
+               (SELECT COUNT(*) FROM (
+                  SELECT judge_email FROM judge_team_assignments
+                  WHERE event_id = ? AND team_name = ? AND round = ?
+                  UNION
+                  SELECT judge_email FROM scores
+                  WHERE event_id = ? AND team_name = ? AND round = ?
+                )) AS judge_count,
+               (SELECT COUNT(*) FROM (
+                  SELECT judge_email FROM judge_team_assignments
+                  WHERE event_id = ? AND team_name = ? AND round = ? AND judge_email = ?
+                  UNION
+                  SELECT judge_email FROM scores
+                  WHERE event_id = ? AND team_name = ? AND round = ? AND judge_email = ?
+                )) AS already_here`,
+            [eventId, teamName, round, eventId, teamName, round, eventId, teamName, round, judgeEmail, eventId, teamName, round, judgeEmail],
+            (capErr, capRow) => {
+              if (capErr) {
+                db.run('ROLLBACK', () => { });
+                reject(capErr);
+                return;
+              }
+
+              const requiredJudges = getRequiredJudgesPerTeam();
+              const judgeCount = capRow ? capRow.judge_count : 0;
+              const alreadyHere = capRow ? capRow.already_here : 0;
+              if (!alreadyHere && judgeCount >= requiredJudges) {
+                db.run('ROLLBACK', () => { });
+                resolve({ success: false, reason: 'team_full' });
+                return;
+              }
+
           // Try to insert or update the assignment with lock
           db.run(
-            `INSERT INTO judge_team_assignments (judge_email, team_name, round, completed, locked_at) 
-             VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
-             ON CONFLICT(judge_email, team_name, round) 
+            `INSERT INTO judge_team_assignments (event_id, judge_email, team_name, round, completed, locked_at) 
+             VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+             ON CONFLICT(event_id, judge_email, team_name, round) 
              DO UPDATE SET locked_at = CURRENT_TIMESTAMP 
              WHERE completed = 0 AND locked_at IS NULL`,
-            [judgeEmail, teamName, round],
+            [eventId, judgeEmail, teamName, round],
             function (err) {
               if (err) {
                 db.run('ROLLBACK', () => { });
@@ -1668,12 +1996,13 @@ const lockTeamForJudge = (judgeEmail, teamName, round) => {
               db.get(
                 `SELECT locked_at, id
                  FROM judge_team_assignments 
-                 WHERE judge_email = ? 
+                 WHERE event_id = ?
+                   AND judge_email = ? 
                    AND team_name = ? 
                    AND round = ? 
                    AND completed = 0 
                    AND locked_at IS NOT NULL`,
-                [judgeEmail, teamName, round],
+                [eventId, judgeEmail, teamName, round],
                 (err, lockCheck) => {
                   if (err) {
                     db.run('ROLLBACK', () => { });
@@ -1699,10 +2028,12 @@ const lockTeamForJudge = (judgeEmail, teamName, round) => {
               );
             }
           );
-        }
-      );
+              }
+            );
+          }
+        );
+      });
     });
-  });
 };
 
 // Screenshot management functions
@@ -1802,21 +2133,19 @@ const updateScreenshotOrder = (teamId, screenshotOrders) => {
 
 // Get all teams for public projects page (excludes sensitive fields like team_leader_email)
 // Only returns published teams
-const getAllTeamsForProjects = () => {
+const getAllTeamsForProjects = (eventId) => {
   return new Promise((resolve, reject) => {
-    // Exclude contact_email for public access - sensitive data should only be shown to team owners or admins
-    // Only show published teams
     db.all(
-      `SELECT t.id, t.name, t.table_name, t.project_name, 
+      `SELECT t.id, t.event_id, t.name, t.table_name, t.project_name, 
               t.github_link, t.website_link, t.division, t.category_id,
-              c.name as category_name, t.team_members, 
+              c.name as category_name, t.team_members, t.registration_type,
               t.readme_content, t.banner_image, t.logo_image, t.screenshots, t.created_at, t.updated_at,
               (SELECT COUNT(*) FROM team_screenshots ts WHERE ts.team_id = t.id) as screenshot_count
        FROM teams t
        LEFT JOIN categories c ON t.category_id = c.id
-       WHERE t.is_published = 1
+       WHERE t.event_id = ? AND t.is_published = 1
        ORDER BY t.name`,
-      [],
+      [eventId],
       (err, rows) => {
         if (err) {
           reject(err);
@@ -1831,6 +2160,9 @@ const getAllTeamsForProjects = () => {
               row.team_members = [];
             }
           } else {
+            row.team_members = [];
+          }
+          if (row.registration_type === 'school') {
             row.team_members = [];
           }
         });
@@ -1850,12 +2182,22 @@ const getUserDataForExport = (email) => {
       }
 
       const userWithTeam = await getUserWithTeam(email);
-      const scores = await getJudgeScores(email);
+      const scores = await new Promise((resolveScores, rejectScores) => {
+        db.all('SELECT * FROM scores WHERE judge_email = ? ORDER BY event_id, round, team_name', [email], (err, rows) => {
+          if (err) rejectScores(err);
+          else resolveScores(rows || []);
+        });
+      });
+      const ownedTeams = await new Promise((resolveTeams, rejectTeams) => {
+        db.all('SELECT * FROM teams WHERE owner_user_id = ? ORDER BY event_id, name', [user.id], (err, rows) => {
+          if (err) rejectTeams(err);
+          else resolveTeams(rows || []);
+        });
+      });
 
-      // Get team data if user is a participant
       let teamData = null;
       if (user.team_id) {
-        teamData = await getTeamById(user.team_id);
+        teamData = await getTeamById(user.team_id, true);
         if (teamData) {
           const screenshots = await getTeamScreenshots(user.team_id);
           teamData.screenshots = screenshots;
@@ -1868,6 +2210,8 @@ const getUserDataForExport = (email) => {
           email: user.email,
           name: user.name,
           role: user.role,
+          account_type: user.account_type || 'individual',
+          school_name: user.school_name || null,
           created_at: user.created_at,
           privacy_policy_accepted: user.privacy_policy_accepted === 1,
           terms_accepted: user.terms_accepted === 1,
@@ -1878,6 +2222,8 @@ const getUserDataForExport = (email) => {
           email_preferences: user.email_preferences === 1
         },
         team: teamData,
+        teams: ownedTeams,
+        profile: userWithTeam,
         scores: scores || [],
         exported_at: new Date().toISOString()
       };
@@ -1989,14 +2335,15 @@ const deleteUserAccount = (email) => {
 };
 
 // Create a new volunteer
-const createVolunteer = (volunteerData) => {
+const createVolunteer = (eventId, volunteerData) => {
   return new Promise((resolve, reject) => {
     const { name, email, phone, company, help_judging, help_logistics, help_mentor, description } = volunteerData;
 
     db.run(
-      `INSERT INTO volunteers (name, email, phone, company, help_judging, help_logistics, help_mentor, description, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      `INSERT INTO volunteers (event_id, name, email, phone, company, help_judging, help_logistics, help_mentor, description, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [
+        eventId,
         name,
         email,
         phone || null,
@@ -2029,11 +2376,11 @@ const createVolunteer = (volunteerData) => {
 };
 
 // Get all volunteers (optionally filtered by status and search term)
-const getVolunteers = (status = null, searchTerm = null) => {
+const getVolunteers = (eventId, status = null, searchTerm = null) => {
   return new Promise((resolve, reject) => {
     let query = 'SELECT v.*, u.email as user_email FROM volunteers v LEFT JOIN users u ON v.user_id = u.id';
-    const conditions = [];
-    const params = [];
+    const conditions = ['v.event_id = ?'];
+    const params = [eventId];
 
     if (status) {
       conditions.push('v.status = ?');
@@ -2138,17 +2485,15 @@ const updateVolunteerNotes = (id, adminNotes) => {
 };
 
 // Newsletter send tracking
-const createNewsletterSendHash = (subject, content, recipients) => {
-  const crypto = require('crypto');
-  // Create a hash from subject, content, and sorted recipients
+const createNewsletterSendHash = (eventId, subject, content, recipients) => {
   const recipientsStr = Array.isArray(recipients) ? recipients.sort().join(',') : recipients;
-  const hashInput = `${subject}|${content}|${recipientsStr}`;
+  const hashInput = `${eventId}|${subject}|${content}|${recipientsStr}`;
   return crypto.createHash('sha256').update(hashInput).digest('hex');
 };
 
-const checkNewsletterAlreadySent = (sendHash) => {
+const checkNewsletterAlreadySent = (eventId, sendHash) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT id, sent_at, sent_by FROM newsletter_sends WHERE send_hash = ?', [sendHash], (err, row) => {
+    db.get('SELECT id, sent_at, sent_by FROM newsletter_sends WHERE event_id = ? AND send_hash = ?', [eventId, sendHash], (err, row) => {
       if (err) {
         reject(err);
       } else {
@@ -2158,13 +2503,13 @@ const checkNewsletterAlreadySent = (sendHash) => {
   });
 };
 
-const logNewsletterSend = (sendHash, subject, content, recipients, recipientCount, sentCount, failedCount, sentBy) => {
+const logNewsletterSend = (eventId, sendHash, subject, content, recipients, recipientCount, sentCount, failedCount, sentBy) => {
   return new Promise((resolve, reject) => {
     const recipientsStr = Array.isArray(recipients) ? JSON.stringify(recipients) : recipients;
     db.run(
-      `INSERT INTO newsletter_sends (send_hash, subject, content, recipients, recipient_count, sent_count, failed_count, sent_by, sent_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
-      [sendHash, subject, content, recipientsStr, recipientCount, sentCount, failedCount, sentBy],
+      `INSERT INTO newsletter_sends (event_id, send_hash, subject, content, recipients, recipient_count, sent_count, failed_count, sent_by, sent_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))`,
+      [eventId, sendHash, subject, content, recipientsStr, recipientCount, sentCount, failedCount, sentBy],
       function (err) {
         if (err) {
           reject(err);
@@ -2176,14 +2521,15 @@ const logNewsletterSend = (sendHash, subject, content, recipients, recipientCoun
   });
 };
 
-const getNewsletterSendHistory = (limit = 50) => {
+const getNewsletterSendHistory = (eventId, limit = 50) => {
   return new Promise((resolve, reject) => {
     db.all(
       `SELECT id, subject, recipient_count, sent_count, failed_count, sent_by, sent_at
        FROM newsletter_sends
+       WHERE event_id = ?
        ORDER BY sent_at DESC
        LIMIT ?`,
-      [limit],
+      [eventId, limit],
       (err, rows) => {
         if (err) {
           reject(err);
@@ -2192,6 +2538,310 @@ const getNewsletterSendHistory = (limit = 50) => {
         }
       }
     );
+  });
+};
+
+const getRequiredJudgesPerTeam = () => {
+  const parsed = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 2;
+  return parsed;
+};
+
+const getAssignment = (eventId, judgeEmail, teamName, round) => {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT * FROM judge_team_assignments
+       WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?`,
+      [eventId, judgeEmail, teamName, round],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row || null);
+      }
+    );
+  });
+};
+
+const getTeamJudgeEmails = (eventId, teamName, round) => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT judge_email FROM judge_team_assignments WHERE event_id = ? AND team_name = ? AND round = ?
+       UNION
+       SELECT judge_email FROM scores WHERE event_id = ? AND team_name = ? AND round = ?`,
+      [eventId, teamName, round, eventId, teamName, round],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(row => row.judge_email));
+      }
+    );
+  });
+};
+
+const teamHasRoomForJudge = async (eventId, teamName, round, judgeEmail) => {
+  const emails = await getTeamJudgeEmails(eventId, teamName, round);
+  const required = getRequiredJudgesPerTeam();
+  const already = emails.includes(judgeEmail);
+  return {
+    allowed: already || emails.length < required,
+    judgeCount: emails.length,
+    already,
+    required
+  };
+};
+
+const canJudgeSubmitNewScore = async (eventId, judgeEmail, teamName, round) => {
+  const existing = await getScore(eventId, judgeEmail, teamName, round);
+  if (existing) {
+    return { ok: true, reason: 'edit' };
+  }
+  const capacity = await teamHasRoomForJudge(eventId, teamName, round, judgeEmail);
+  if (!capacity.allowed) {
+    return { ok: false, reason: 'team_full' };
+  }
+  const assignment = await getAssignment(eventId, judgeEmail, teamName, round);
+  if (!assignment) {
+    return { ok: false, reason: 'not_assigned' };
+  }
+  return { ok: true, reason: 'assigned' };
+};
+
+const getScoreById = (id) => {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT s.*, t.division
+       FROM scores s
+       LEFT JOIN teams t ON s.team_name = t.name AND t.event_id = s.event_id
+       WHERE s.id = ?`,
+      [id],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row || null);
+      }
+    );
+  });
+};
+
+const listScores = (eventId, filters = {}) => {
+  return new Promise((resolve, reject) => {
+    let query = `
+      SELECT s.*, t.division
+      FROM scores s
+      LEFT JOIN teams t ON s.team_name = t.name AND t.event_id = s.event_id
+      WHERE s.event_id = ?
+    `;
+    const params = [eventId];
+
+    if (filters.round) {
+      query += ' AND s.round = ?';
+      params.push(filters.round);
+    }
+    if (filters.teamName) {
+      query += ' AND s.team_name LIKE ?';
+      params.push(`%${filters.teamName}%`);
+    }
+    if (filters.judgeEmail) {
+      query += ' AND s.judge_email LIKE ?';
+      params.push(`%${filters.judgeEmail}%`);
+    }
+
+    query += ' ORDER BY s.round DESC, s.team_name, s.judge_email';
+
+    db.all(query, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+};
+
+const updateScoreById = (id, score, notes) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE scores
+       SET score = ?, notes = ?, updated_at = datetime("now")
+       WHERE id = ?`,
+      [score, notes, id],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ changes: this.changes });
+      }
+    );
+  });
+};
+
+const deleteScoreById = (id) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM scores WHERE id = ?', [id], (err, row) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      if (!row) {
+        resolve(null);
+        return;
+      }
+
+      db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+        if (beginErr) {
+          reject(beginErr);
+          return;
+        }
+
+        db.run('DELETE FROM scores WHERE id = ?', [id], (deleteErr) => {
+          if (deleteErr) {
+            db.run('ROLLBACK', () => { });
+            reject(deleteErr);
+            return;
+          }
+
+          db.run(
+            `DELETE FROM judge_team_assignments
+             WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?`,
+            [row.event_id, row.judge_email, row.team_name, row.round],
+            (assignmentErr) => {
+              if (assignmentErr) {
+                db.run('ROLLBACK', () => { });
+                reject(assignmentErr);
+                return;
+              }
+
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) {
+                  db.run('ROLLBACK', () => { });
+                  reject(commitErr);
+                  return;
+                }
+                resolve(row);
+              });
+            }
+          );
+        });
+      });
+    });
+  });
+};
+
+const getMembership = (userId, eventId) => {
+  return new Promise((resolve, reject) => {
+    db.get(
+      'SELECT * FROM event_memberships WHERE user_id = ? AND event_id = ?',
+      [userId, eventId],
+      (err, row) => (err ? reject(err) : resolve(row || null))
+    );
+  });
+};
+
+const getMembershipsForUser = (userId) => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT m.*, e.event_name, e.slug, e.status
+       FROM event_memberships m
+       JOIN event_settings e ON e.id = m.event_id
+       WHERE m.user_id = ?
+       ORDER BY e.event_name`,
+      [userId],
+      (err, rows) => (err ? reject(err) : resolve(rows || []))
+    );
+  });
+};
+
+const upsertMembership = (userId, eventId, role) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO event_memberships (user_id, event_id, role)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id, event_id) DO UPDATE SET role = excluded.role`,
+      [userId, eventId, role],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ user_id: userId, event_id: eventId, role });
+      }
+    );
+  });
+};
+
+const getIndividualTeam = (eventId, userId) => {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT id FROM teams
+       WHERE event_id = ? AND owner_user_id = ? AND registration_type = 'individual'
+       ORDER BY id ASC LIMIT 1`,
+      [eventId, userId],
+      (err, row) => {
+        if (err) reject(err);
+        else if (!row) resolve(null);
+        else getTeamById(row.id, true).then(resolve).catch(reject);
+      }
+    );
+  });
+};
+
+const getTeamsForOwner = (eventId, userId) => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT id FROM teams
+       WHERE event_id = ? AND owner_user_id = ?
+       ORDER BY name`,
+      [eventId, userId],
+      (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        Promise.all((rows || []).map(row => getTeamById(row.id, true))).then(resolve).catch(reject);
+      }
+    );
+  });
+};
+
+const countSchoolTeams = (userId) => {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT COUNT(*) AS count FROM teams WHERE owner_user_id = ? AND registration_type = 'school'`,
+      [userId],
+      (err, row) => (err ? reject(err) : resolve(row ? row.count : 0))
+    );
+  });
+};
+
+const saveTieBreakOrder = (eventId, division, round, orderedTeamNames) => {
+  return new Promise((resolve, reject) => {
+    db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+      if (beginErr) {
+        reject(beginErr);
+        return;
+      }
+
+      const insertAt = (index) => {
+        if (index >= orderedTeamNames.length) {
+          db.run('COMMIT', (commitErr) => {
+            if (commitErr) {
+              db.run('ROLLBACK', () => { });
+              reject(commitErr);
+              return;
+            }
+            resolve();
+          });
+          return;
+        }
+
+        db.run(
+          `INSERT INTO tie_breaks (event_id, division, team_name, round, sort_order)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(event_id, division, team_name, round)
+           DO UPDATE SET sort_order = excluded.sort_order`,
+          [eventId, division, orderedTeamNames[index], round, index + 1],
+          (insertErr) => {
+            if (insertErr) {
+              db.run('ROLLBACK', () => { });
+              reject(insertErr);
+              return;
+            }
+            insertAt(index + 1);
+          }
+        );
+      };
+
+      insertAt(0);
+    });
   });
 };
 
@@ -2214,9 +2864,12 @@ module.exports = {
   initializeChessBoardTables,
   getTables,
   getTableNames,
+  deleteTable,
+  deleteTables,
   syncCategories,
   getCategories,
   getCategoryNames,
+  deleteCategory,
   getCategoryById,
   getCategoryByName,
   createTeam,
@@ -2224,14 +2877,35 @@ module.exports = {
   getTeams,
   getTeamById,
   getTeamTable,
+  getIndividualTeam,
+  getTeamsForOwner,
+  countSchoolTeams,
   updateTeam,
   deleteTeam,
   getScore,
+  getScoreById,
+  listScores,
+  updateScoreById,
+  deleteScoreById,
   saveScore,
   getJudgeScores,
   getTableResults,
+  saveTieBreakOrder,
+  getRequiredJudgesPerTeam,
+  getAssignment,
+  teamHasRoomForJudge,
+  canJudgeSubmitNewScore,
   getEventSettings,
+  getEventById,
+  getEventBySlug,
+  listEvents,
+  listVisibleEvents,
+  createEvent,
+  updateEventStatus,
   updateEventSettings,
+  getMembership,
+  getMembershipsForUser,
+  upsertMembership,
   incrementRound,
   setJudgingLocked,
   setWinners,

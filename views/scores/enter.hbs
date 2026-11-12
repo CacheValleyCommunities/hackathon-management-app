@@ -2,11 +2,11 @@
     <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <!-- Back Button -->
         <div class="mb-8">
-            <a href="/scores/select-team?round={{round}}" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition">
+            <a href="{{#if (eq (lookup query 'auto') '1')}}/scores/judge-queue{{else}}/scores/select-team?round={{round}}{{/if}}" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                 </svg>
-                Back to Teams
+                {{#if (eq (lookup query 'auto') '1')}}Back to Queue{{else}}Back to Teams{{/if}}
             </a>
         </div>
 
@@ -50,8 +50,29 @@
         </div>
         {{/if}}
 
+        {{#unless isEdit}}
+        <div id="team-confirm" class="mb-8 border border-gray-200 rounded-lg p-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">Confirm this team</h2>
+            <p class="text-gray-600 mb-6">Check the team name and table before you start scoring.</p>
+            <div class="grid grid-cols-2 gap-6 mb-6">
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Team</div>
+                    <div class="text-lg font-semibold text-gray-900">{{teamName}}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Table</div>
+                    <div class="text-lg font-semibold text-gray-900">{{tableName}}</div>
+                </div>
+            </div>
+            <button type="button" id="confirm-team-button"
+                class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition">
+                I'm with this team
+            </button>
+        </div>
+        {{/unless}}
+
         <!-- Form -->
-        <form method="POST" action="/scores/submit" class="space-y-8">
+        <form method="POST" action="/scores/submit" id="score-form" class="space-y-8 {{#unless isEdit}}hidden{{/unless}}">
             <input type="hidden" name="teamName" value="{{teamName}}">
             <input type="hidden" name="round" value="{{round}}">
             <input type="hidden" name="tableName" value="{{tableName}}">
@@ -85,7 +106,7 @@
                        min="0"
                        value="{{#if existingScore}}{{existingScore.score}}{{/if}}"
                        required 
-                       autofocus
+                       {{#if isEdit}}autofocus{{/if}}
                        class="w-full px-4 py-4 text-3xl font-bold border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
             </div>
 
@@ -107,5 +128,16 @@
                 {{#if isEdit}}Update Score{{else}}Submit Score{{/if}}
             </button>
         </form>
+        {{#unless isEdit}}
+        <script>
+            document.getElementById('confirm-team-button').addEventListener('click', function () {
+                document.getElementById('team-confirm').classList.add('hidden');
+                const form = document.getElementById('score-form');
+                form.classList.remove('hidden');
+                const score = document.getElementById('score');
+                if (score) score.focus();
+            });
+        </script>
+        {{/unless}}
     </div>
 </div>

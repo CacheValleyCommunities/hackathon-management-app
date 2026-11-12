@@ -144,8 +144,9 @@ async function createSampleData() {
 
         // Update event settings with divisions
         console.log('📋 Setting up event...');
-        const eventSettings = await db.getEventSettings();
-        await db.updateEventSettings({
+        const eventId = (await db.listEvents())[0].id;
+        const eventSettings = await db.getEventSettings(eventId);
+        await db.updateEventSettings(eventId, {
             ...eventSettings,
             event_name: 'Sample Hackathon 2025',
             divisions: JSON.stringify(DIVISIONS),
@@ -160,14 +161,14 @@ async function createSampleData() {
         // Create tables
         console.log('\n🗺️  Creating tables...');
         const tables = generateTables();
-        await db.syncTables(tables);
+        await db.syncTables(eventId, tables);
         console.log(`✓ Created ${tables.length} tables (A1-F7)`);
 
         // Create teams
         console.log('\n👥 Creating teams...');
         const teams = generateTeams();
         for (const team of teams) {
-            await db.createTeam(team);
+            await db.createTeam({ ...team, event_id: eventId, registration_type: 'individual' });
         }
         console.log(`✓ Created ${teams.length} teams across ${DIVISIONS.length} divisions`);
         DIVISIONS.forEach(div => {
@@ -179,7 +180,8 @@ async function createSampleData() {
         console.log('\n⚖️  Creating judges...');
         const judges = generateJudges();
         for (const judge of judges) {
-            await db.getOrCreateUser(judge.email, judge.name, judge.role);
+            const user = await db.getOrCreateUser(judge.email, judge.name);
+            await db.upsertMembership(user.id, eventId, 'judge');
         }
         console.log(`✓ Created ${judges.length} judges`);
         judges.forEach((judge, i) => {

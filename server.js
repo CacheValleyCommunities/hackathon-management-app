@@ -17,6 +17,8 @@ const projectsRoutes = require('./routes/projects');
 const policiesRoutes = require('./routes/policies');
 const accountRoutes = require('./routes/account');
 const volunteersRoutes = require('./routes/volunteers');
+const eventsRoutes = require('./routes/events');
+const schoolRoutes = require('./routes/school');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -92,20 +94,65 @@ app.use((req, res, next) => {
 
 // Middleware to make user, event settings, and current year available to all views
 app.use(async (req, res, next) => {
-    res.locals.user = req.user || req.session.user || null;
-    res.locals.currentRound = req.session.currentRound || 1;
-    res.locals.currentYear = new Date().getFullYear();
+    const sessionUser = req.session?.user || null;
+    if (sessionUser && sessionUser.email) {
+        try {
+            const freshUser = await db.getUserByEmail(sessionUser.email);
+            if (freshUser) {
+                sessionUser.id = freshUser.id;
+                sessionUser.role = freshUser.role === 'admin' ? 'admin' : 'user';
+                sessionUser.account_type = freshUser.account_type || 'individual';
+                sessionUser.school_name = freshUser.school_name || null;
+                sessionUser.name = freshUser.name;
+                req.session.user = sessionUser;
+            }
+        } catch (error) {
+            console.error('Error refreshing user:', error);
+        }
+    }
 
-    // Base URL for meta tags
-    const protocol = req.protocol;
-    const host = req.get('host');
-    res.locals.baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+    req.eventId = req.session?.eventId || null;
+    res.locals.currentYear = new Date().getFullYear();
+    res.locals.baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
     try {
-        const eventSettings = await db.getEventSettings();
-        res.locals.eventSettings = eventSettings;
+        const eventSettings = req.eventId
+            ? await db.getEventById(req.eventId)
+            : null;
+        req.eventSettings = eventSettings;
+        res.locals.eventSettings = eventSettings || {
+            event_name: 'Hackathon',
+            start_date: null,
+            end_date: null,
+            divisions: [],
+            logo_filename: null,
+            status: null
+        };
+        res.locals.currentRound = req.session?.currentRound || (eventSettings && eventSettings.current_round) || 1;
+
+        req.eventRole = null;
+        if (sessionUser && sessionUser.role === 'admin') {
+            req.eventRole = 'admin';
+        } else if (sessionUser && req.eventId) {
+            const membership = await db.getMembership(sessionUser.id, req.eventId);
+            req.eventRole = membership ? membership.role : null;
+        }
+        res.locals.eventRole = req.eventRole;
+
+        if (sessionUser) {
+            res.locals.user = {
+                ...sessionUser,
+                eventRole: req.eventRole,
+                role: sessionUser.role === 'admin' ? 'admin' : (req.eventRole || sessionUser.role)
+            };
+        } else {
+            res.locals.user = req.user || null;
+        }
     } catch (error) {
         console.error('Error loading event settings:', error);
+        res.locals.user = sessionUser || req.user || null;
+        res.locals.eventRole = null;
+        res.locals.currentRound = req.session?.currentRound || 1;
         res.locals.eventSettings = {
             event_name: 'Hackathon',
             start_date: null,
@@ -125,6 +172,8 @@ app.use('/register', registerRoutes);
 app.use('/admin', adminRoutes);
 app.use('/participant', participantRoutes);
 app.use('/projects', projectsRoutes);
+app.use('/events', eventsRoutes);
+app.use('/school', schoolRoutes);
 app.use('/policies', policiesRoutes);
 app.use('/account', accountRoutes);
 app.use('/volunteers', volunteersRoutes);

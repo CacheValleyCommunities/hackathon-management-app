@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db/database');
 
 // Middleware to require authentication
 const requireAuth = (req, res, next) => {
@@ -11,62 +12,31 @@ const requireAuth = (req, res, next) => {
 
 // GET home page - landing page for non-authenticated, dashboard for authenticated
 router.get('/', async (req, res) => {
-  // If not authenticated, show landing page
   if (!req.session.user) {
-    const db = require('../db/database');
-    const eventSettings = await db.getEventSettings();
-    // Parse divisions for display
-    let divisionsList = [];
-    if (eventSettings.divisions) {
-      try {
-        divisionsList = typeof eventSettings.divisions === 'string'
-          ? JSON.parse(eventSettings.divisions)
-          : eventSettings.divisions;
-      } catch (e) {
-        divisionsList = [];
-      }
-    }
-
-    // Prepare meta tags for landing page
-    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-    const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
-    const eventName = eventSettings.event_name || 'Hackathon';
-
-    const meta = {
-      type: 'website',
-      title: eventName,
-      description: eventSettings.landing_page_content
-        ? eventSettings.landing_page_content.replace(/<[^>]*>/g, '').substring(0, 200) + '...'
-        : `Join ${eventName} - A hackathon event featuring amazing projects and innovative solutions.`,
-      url: appUrl,
-      image: metaImage,
-      siteName: eventName,
-      twitterCard: 'summary_large_image'
-    };
-
-    return res.render('landing', {
-      title: eventName,
-      eventSettings,
-      divisionsList,
-      layout: 'main',
-      meta
+    const events = await db.listVisibleEvents(null);
+    return res.render('events/index', {
+      title: 'Events',
+      events,
+      query: req.query,
+      layout: 'main'
     });
   }
 
-  // If authenticated, show dashboard (existing logic)
-  const role = req.session.user.role || 'judge';
-
-  // Redirect participants to their dashboard
-  if (role === 'participant') {
-    return res.redirect('/participant');
+  if (!req.eventId) {
+    return res.redirect('/events');
   }
 
-  // Judges and admins see the main dashboard
-  const db = require('../db/database');
-  const eventSettings = await db.getEventSettings();
+  if (req.eventRole === 'participant') {
+    return res.redirect('/participant');
+  }
+  if (req.eventRole === 'chaperone' || (req.session.user.account_type === 'school' && !req.eventRole)) {
+    return res.redirect('/school');
+  }
+
+  const eventSettings = req.eventSettings || await db.getEventSettings(req.eventId);
   const currentRound = eventSettings.current_round || req.session.currentRound || 1;
-  const tables = await db.getTableNames();
-  const allTeams = await db.getTeams();
+  const tables = await db.getTableNames(req.eventId);
+  const allTeams = await db.getTeams(req.eventId);
 
   // Filter out sensitive data (contact_email) for non-admin users
   const teams = allTeams.map(team => {

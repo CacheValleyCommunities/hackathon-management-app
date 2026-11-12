@@ -55,6 +55,14 @@
     <!-- Main Content -->
     <article
         class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 {{#if eventSettings.hero_banner_image}}pt-12 pb-20{{else}}pt-0 pb-20{{/if}}">
+        {{#if showEventActions}}
+        <div class="flex flex-wrap gap-3 mb-10">
+            <a href="/events/{{eventSettings.slug}}/projects" class="px-4 py-2 text-sm font-semibold border border-gray-300 rounded-lg">View projects</a>
+            {{#if (eq eventSettings.status 'open')}}
+            <a href="{{#if user}}/events{{else}}/auth/login{{/if}}" class="px-4 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg">Register a team</a>
+            {{/if}}
+        </div>
+        {{/if}}
         <!-- Landing Page Content -->
         {{#if eventSettings.landing_page_content}}
         <div class="prose prose-lg max-w-none">

@@ -1,26 +1,32 @@
 const db = require('../db/database');
 
+const actingRole = (req) => {
+  const sessionUser = req.session.user || {};
+  if (sessionUser.role === 'admin') return 'admin';
+  if (req.eventRole) return req.eventRole;
+  if (sessionUser.role && sessionUser.role !== 'user') return sessionUser.role;
+  return null;
+};
+
 // Middleware to require specific role(s)
 const requireRole = (...allowedRoles) => {
   return async (req, res, next) => {
     if (!req.session.user) {
       return res.redirect('/auth/login');
     }
-    
-    const userRole = req.session.user.role || 'judge';
-    
-    // Admins can access everything
+
+    const userRole = actingRole(req);
+
     if (userRole === 'admin') {
       return next();
     }
-    
-    // Check if user's role is in allowed roles
-    if (!allowedRoles.includes(userRole)) {
+
+    if (!userRole || !allowedRoles.includes(userRole)) {
       return res.status(403).render('error', {
         message: `Access denied. Required role: ${allowedRoles.join(' or ')}`
       });
     }
-    
+
     next();
   };
 };
@@ -32,7 +38,17 @@ const requireAdmin = requireRole('admin');
 const requireJudge = requireRole('judge', 'admin');
 
 // Middleware to require participant (or admin)
-const requireParticipant = requireRole('participant', 'admin');
+const requireParticipant = requireRole('participant', 'chaperone', 'admin');
+
+const requireSelectedEvent = (req, res, next) => {
+  if (!req.session.user) {
+    return res.redirect('/auth/login');
+  }
+  if (!req.eventId) {
+    return res.redirect('/events');
+  }
+  next();
+};
 
 // Middleware to check if user owns the team
 const requireTeamOwner = async (req, res, next) => {
@@ -40,22 +56,43 @@ const requireTeamOwner = async (req, res, next) => {
     return res.redirect('/auth/login');
   }
   
-  const userRole = req.session.user.role;
+  const userRole = actingRole(req);
   const userEmail = req.session.user.email;
   const userTeamId = req.session.user.team_id;
-  
-  // Admins can access everything
+
   if (userRole === 'admin') {
     return next();
   }
-  
-  // Participants can only access their own team
-  if (userRole === 'participant') {
-    const teamId = parseInt(req.params.id || req.params.teamId);
-    if (userTeamId !== teamId) {
-      return res.status(403).render('error', {
-        message: 'Access denied. You can only access your own team information.'
-      });
+
+  const teamId = parseInt(req.params.id || req.params.teamId, 10);
+  if ((userRole === 'participant' || userRole === 'chaperone') && userTeamId && userTeamId === teamId) {
+    return next();
+  }
+
+  if (userRole === 'participant' && userTeamId && userTeamId !== teamId) {
+    return res.status(403).render('error', {
+      message: 'Access denied. You can only access your own team information.'
+    });
+  }
+
+  if (userRole === 'participant' || userRole === 'chaperone') {
+    try {
+      const team = await db.getTeamById(teamId);
+      if (!team || (req.eventId && team.event_id !== req.eventId)) {
+        return res.status(403).render('error', {
+          message: 'Access denied. You can only access your own team information.'
+        });
+      }
+      const ownsTeam = await db.isTeamLeader(teamId, userEmail);
+      if (!ownsTeam) {
+        return res.status(403).render('error', {
+          message: 'Access denied. You can only access your own team information.'
+        });
+      }
+      return next();
+    } catch (error) {
+      console.error('Error checking team ownership:', error);
+      return res.status(500).render('error', { message: 'Error verifying team ownership.' });
     }
   }
   
@@ -68,7 +105,7 @@ const requireTeamLeader = async (req, res, next) => {
     return res.redirect('/auth/login');
   }
   
-  const userRole = req.session.user.role;
+  const userRole = actingRole(req);
   const userEmail = req.session.user.email;
   
   // Admins can access everything
@@ -106,7 +143,13 @@ const requireTeamLeader = async (req, res, next) => {
       });
     }
     
-    // Check if user is the team leader (using helper function that doesn't expose team_leader_email)
+    if (req.eventId && team.event_id && team.event_id !== req.eventId) {
+      return res.status(403).render('error', {
+        message: 'Access denied. That team belongs to a different event.'
+      });
+    }
+
+    // Check if user is the team leader or owning chaperone
     const userIsTeamLeader = await db.isTeamLeader(teamId, userEmail);
     
     if (!userIsTeamLeader && userRole !== 'admin') {
@@ -129,6 +172,7 @@ module.exports = {
   requireAdmin,
   requireJudge,
   requireParticipant,
+  requireSelectedEvent,
   requireTeamOwner,
   requireTeamLeader
 };

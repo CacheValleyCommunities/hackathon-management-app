@@ -6,7 +6,8 @@
             <img src="/uploads/{{eventSettings.logo_filename}}" alt="{{eventSettings.event_name}}"
                 class="max-h-20 mx-auto mb-6">
             {{/if}}
-            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-2">Team Registration</h1>
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-2">{{#if isSchool}}School team registration{{else}}Team Registration{{/if}}</h1>
+            <p class="text-sm text-gray-500 mb-4">{{eventSettings.event_name}}</p>
             <a href="/auth/login" class="text-sm text-gray-600 hover:text-gray-900 transition">
                 ← Back to Sign In
             </a>
@@ -118,9 +119,8 @@
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
                 </div>
 
-                <!-- Contact Email & Website (Side by Side) -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Contact Email -->
+                    {{#unless isSchool}}
                     <div>
                         <label for="contactEmail" class="block text-sm font-semibold text-gray-700 mb-2">
                             Contact Email <span id="contactEmailRequired" class="text-red-500">*</span>
@@ -131,8 +131,15 @@
                         <p id="contactEmailNote" class="text-xs text-gray-500 mt-2 hidden">Optional for participants
                             under 18 and only with consent of guardian</p>
                     </div>
+                    {{else}}
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Chaperone email</label>
+                        <input type="email" value="{{user.email}}" readonly
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600">
+                        <p class="text-xs text-gray-500 mt-2">Student names, emails, and ages are not collected.</p>
+                    </div>
+                    {{/unless}}
 
-                    <!-- Website Link -->
                     <div>
                         <label for="websiteLink" class="block text-sm font-semibold text-gray-700 mb-2">
                             Website / Demo Link
@@ -142,7 +149,6 @@
                     </div>
                 </div>
 
-                <!-- GitHub Link -->
                 <div>
                     <label for="githubLink" class="block text-sm font-semibold text-gray-700 mb-2">
                         GitHub Repository
@@ -151,7 +157,7 @@
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
                 </div>
 
-                <!-- Team Members -->
+                {{#unless isSchool}}
                 <div>
                     <label for="teamMembers" class="block text-sm font-semibold text-gray-700 mb-2">
                         Team Members
@@ -162,7 +168,6 @@
                     <p class="text-xs text-gray-500 mt-2">You can add or edit team members later from your dashboard</p>
                 </div>
 
-                <!-- Age and Guardian Information -->
                 <div class="border-t border-gray-200 pt-6">
                     <div class="mb-4">
                         <label class="flex items-start gap-3 cursor-pointer">
@@ -182,27 +187,10 @@
                         </label>
                         <input type="email" id="guardianEmail" name="guardianEmail" placeholder="guardian@example.com"
                             class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
-                        <div class="mt-3 bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd"
-                                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                            clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <p class="text-sm text-amber-800 font-semibold">Guardian Must Complete Setup</p>
-                                    <p class="text-xs text-amber-700 mt-1">
-                                        The guardian will receive an email and must log in to complete the team setup.
-                                        <strong>The guardian is the sole legal entity responsible</strong> for all
-                                        information entered into the platform.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                        <p class="text-xs text-amber-700 mt-2">The guardian must log in to complete setup and is responsible for the information entered.</p>
                     </div>
                 </div>
+                {{/unless}}
 
                 <!-- Policy Acceptance -->
                 <div class="border-t border-gray-200 pt-6 space-y-4">

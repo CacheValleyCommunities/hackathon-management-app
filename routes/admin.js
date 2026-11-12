@@ -10,6 +10,93 @@ const { requireAdmin } = require('../middleware/rbac');
 const { checkAndReturnError } = require('../middleware/validation');
 const emailService = require('../services/email');
 
+const EVENT_ROLES = ['judge', 'participant', 'chaperone'];
+
+router.use((req, res, next) => {
+  if (!req.session.user) return res.redirect('/auth/login');
+  if (req.session.user.role !== 'admin') {
+    return res.status(403).render('error', { message: 'Access denied. Required role: admin' });
+  }
+  if (req.path === '/events' || req.path.startsWith('/events/')) return next();
+  if (!req.eventId) return res.redirect('/admin/events');
+  next();
+});
+
+const assignEventRole = async (email, name, selectedRole, teamId, eventId, policyData) => {
+  const normalizedEmail = email.toLowerCase().trim();
+  let user = await db.getUserByEmail(normalizedEmail);
+  const globalRole = selectedRole === 'admin' ? 'admin' : 'user';
+  if (user) {
+    const updates = {
+      name: name || user.name,
+      ...policyData
+    };
+    if (user.role !== 'admin' || selectedRole === 'admin') {
+      updates.role = globalRole;
+    }
+    if (teamId) updates.team_id = teamId;
+    await db.updateUser(normalizedEmail, updates);
+    user = await db.getUserByEmail(normalizedEmail);
+  } else {
+    user = await db.createUser(normalizedEmail, name || null, globalRole, teamId || null, policyData);
+  }
+
+    if (EVENT_ROLES.includes(selectedRole)) {
+    await db.upsertMembership(user.id, eventId, selectedRole);
+  }
+  if (selectedRole === 'chaperone') {
+    await db.updateUser(normalizedEmail, {
+      account_type: 'school',
+      school_name: user.school_name || name || null
+    });
+  }
+  if (selectedRole === 'participant' && teamId) {
+    const team = await db.getTeamById(teamId, true);
+    if (team && team.event_id === eventId) {
+      await db.updateTeam(teamId, { owner_user_id: user.id, team_leader_email: normalizedEmail });
+    }
+  }
+  return user;
+};
+
+router.get('/events', async (req, res) => {
+  try {
+    const events = await db.listEvents();
+    res.render('admin/events', {
+      title: 'Events',
+      events,
+      currentEventId: req.eventId || null,
+      error: req.query.error || null
+    });
+  } catch (error) {
+    console.error('Admin events error:', error);
+    res.status(500).render('error', { message: 'Failed to load events' });
+  }
+});
+
+router.post('/events', async (req, res) => {
+  try {
+    const eventName = (req.body.eventName || '').trim();
+    if (!eventName) return res.redirect('/admin/events?error=Name%20is%20required');
+    const event = await db.createEvent({ event_name: eventName, status: 'draft' });
+    req.session.eventId = event.id;
+    delete req.session.currentRound;
+    res.redirect('/admin/settings');
+  } catch (error) {
+    console.error('Create event error:', error);
+    res.redirect('/admin/events?error=Could%20not%20create%20event');
+  }
+});
+
+router.post('/events/:id/status', async (req, res) => {
+  const status = req.body.status;
+  if (!['draft', 'open', 'closed', 'archived'].includes(status)) {
+    return res.redirect('/admin/events?error=Invalid%20status');
+  }
+  await db.updateEventStatus(parseInt(req.params.id, 10), status);
+  res.redirect('/admin/events');
+});
+
 // Configure multer for file uploads
 const uploadsDir = path.join(__dirname, '../public/uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -53,10 +140,10 @@ const upload = multer({
 // GET admin dashboard
 router.get('/', requireAdmin, async (req, res) => {
   try {
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
-    const users = await db.getAllUsers();
-    const tables = await db.getTableNames();
-    const eventSettings = await db.getEventSettings();
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
+    const users = await db.getAllUsers(req.eventId);
+    const tables = await db.getTableNames(req.eventId);
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     res.render('admin/dashboard', {
       title: 'Admin Dashboard',
@@ -78,7 +165,7 @@ router.get('/', requireAdmin, async (req, res) => {
 // POST increment round
 router.post('/increment-round', requireAdmin, async (req, res) => {
   try {
-    await db.incrementRound();
+    await db.incrementRound(req.eventId);
     res.redirect('/?success=round_incremented');
   } catch (error) {
     console.error('Increment round error:', error);
@@ -89,9 +176,9 @@ router.post('/increment-round', requireAdmin, async (req, res) => {
 // GET add team page (must be before /teams/:id/edit to avoid route conflict)
 router.get('/teams/add', requireAdmin, async (req, res) => {
   try {
-    const tables = await db.getTableNames();
-    const categories = await db.getCategories();
-    const eventSettings = await db.getEventSettings();
+    const tables = await db.getTableNames(req.eventId);
+    const categories = await db.getCategories(req.eventId);
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     res.render('admin/add-team', {
       title: 'Add Team',
@@ -115,9 +202,9 @@ router.post('/teams/add', requireAdmin, async (req, res) => {
   try {
     const { teamName, tableName, projectName, contactEmail, githubLink, websiteLink, division, categoryId, isPublished } = req.body;
 
-    const tables = await db.getTableNames();
-    const categories = await db.getCategories();
-    const eventSettings = await db.getEventSettings();
+    const tables = await db.getTableNames(req.eventId);
+    const categories = await db.getCategories(req.eventId);
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     // Validation
     if (!teamName || !tableName || !projectName) {
@@ -178,11 +265,11 @@ router.post('/teams/add', requireAdmin, async (req, res) => {
 
     // Check if table exists, create if it doesn't
     if (!tables.includes(normalizedTableName)) {
-      await db.syncTables([{ name: normalizedTableName }]);
+      await db.syncTables(req.eventId, [{ name: normalizedTableName }]);
     }
 
     // Check if team name already exists
-    const existingTeams = await db.getTeams();
+    const existingTeams = await db.getTeams(req.eventId);
     const teamExists = existingTeams.some(t => t.name.toLowerCase() === teamName.toLowerCase());
 
     if (teamExists) {
@@ -203,6 +290,7 @@ router.post('/teams/add', requireAdmin, async (req, res) => {
 
     // Create team without user data
     const team = await db.createTeam({
+      event_id: req.eventId,
       name: teamName.trim(),
       table_name: normalizedTableName,
       project_name: projectName.trim(),
@@ -212,7 +300,8 @@ router.post('/teams/add', requireAdmin, async (req, res) => {
       division: division || null,
       category_id: categoryIdInt,
       is_published: isPublishedBool,
-      team_leader_email: null // No user data required
+      registration_type: 'individual',
+      team_leader_email: null
     });
 
     res.render('admin/add-team', {
@@ -225,9 +314,9 @@ router.post('/teams/add', requireAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error('Add team error:', error);
-    const tables = await db.getTableNames();
-    const categories = await db.getCategories();
-    const eventSettings = await db.getEventSettings();
+    const tables = await db.getTableNames(req.eventId);
+    const categories = await db.getCategories(req.eventId);
+    const eventSettings = await db.getEventSettings(req.eventId);
     res.render('admin/add-team', {
       title: 'Add Team',
       tables,
@@ -252,10 +341,10 @@ router.get('/teams/:id/edit', requireAdmin, async (req, res) => {
     }
 
     // Get all teams to check for duplicate names
-    const allTeams = await db.getTeams(null, true); // Include sensitive fields for admin
-    const tables = await db.getTableNames();
-    const categories = await db.getCategories();
-    const eventSettings = await db.getEventSettings();
+    const allTeams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
+    const tables = await db.getTableNames(req.eventId);
+    const categories = await db.getCategories(req.eventId);
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     res.render('admin/edit-team', {
       title: `Edit Team - ${team.name}`,
@@ -294,12 +383,12 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
           message: 'Team not found'
         });
       }
-      const eventSettings = await db.getEventSettings();
-      const categories = await db.getCategories();
+      const eventSettings = await db.getEventSettings(req.eventId);
+      const categories = await db.getCategories(req.eventId);
       return res.render('admin/edit-team', {
         title: `Edit Team - ${existingTeam.name}`,
         team: existingTeam,
-        tables: await db.getTableNames(),
+        tables: await db.getTableNames(req.eventId),
         categories,
         divisions: eventSettings.divisions || [],
         error: 'Please select a category for the team'
@@ -314,7 +403,7 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
       });
     }
 
-    const allTeams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const allTeams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
     const nameExists = allTeams.some(t =>
       t.id !== teamId && t.name.toLowerCase() === teamName.toLowerCase()
     );
@@ -324,12 +413,12 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
     const projectNameError = await checkAndReturnError(projectName, 'Project name');
 
     if (teamNameError || projectNameError) {
-      const eventSettings = await db.getEventSettings();
-      const categories = await db.getCategories();
+      const eventSettings = await db.getEventSettings(req.eventId);
+      const categories = await db.getCategories(req.eventId);
       return res.render('admin/edit-team', {
         title: `Edit Team - ${existingTeam.name}`,
         team: existingTeam,
-        tables: await db.getTableNames(),
+        tables: await db.getTableNames(req.eventId),
         categories,
         divisions: eventSettings.divisions || [],
         error: teamNameError || projectNameError
@@ -337,12 +426,12 @@ router.post('/teams/:id/update', requireAdmin, async (req, res) => {
     }
 
     if (nameExists) {
-      const eventSettings = await db.getEventSettings();
-      const categories = await db.getCategories();
+      const eventSettings = await db.getEventSettings(req.eventId);
+      const categories = await db.getCategories(req.eventId);
       return res.render('admin/edit-team', {
         title: `Edit Team - ${existingTeam.name}`,
         team: existingTeam,
-        tables: await db.getTableNames(),
+        tables: await db.getTableNames(req.eventId),
         categories,
         divisions: eventSettings.divisions || [],
         error: 'A team with this name already exists'
@@ -392,7 +481,7 @@ router.post('/teams/:id/delete', requireAdmin, async (req, res) => {
 
 // GET add judge page
 router.get('/judges/add', requireAdmin, async (req, res) => {
-  const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+  const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
   res.render('admin/add-judge', {
     title: 'Add User',
     error: null,
@@ -405,7 +494,7 @@ router.get('/judges/add', requireAdmin, async (req, res) => {
 router.post('/judges/add', requireAdmin, async (req, res) => {
   try {
     const { email, name, role, teamId } = req.body;
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
 
     if (!email || !email.includes('@')) {
       return res.render('admin/add-judge', {
@@ -430,76 +519,46 @@ router.post('/judges/add', requireAdmin, async (req, res) => {
     }
 
     const selectedRole = role || 'judge';
-    const linkedTeamId = teamId && teamId !== '' ? parseInt(teamId) : null;
-
-    // Check if user already exists
+    const linkedTeamId = teamId && teamId !== '' ? parseInt(teamId, 10) : null;
+    const policyData = {
+      privacy_policy_accepted: 1,
+      terms_accepted: 1,
+      acceptable_use_accepted: 1,
+      policies_accepted_at: new Date().toISOString(),
+      email_preferences: 1,
+      is_under_18: 0,
+      guardian_email: null
+    };
     const existingUser = await db.getUserByEmail(email.toLowerCase().trim());
+    await assignEventRole(email, name || null, selectedRole, linkedTeamId, req.eventId, policyData);
 
-    if (existingUser) {
-      // Update existing user - also set all policies as accepted when updating from admin panel
-      await db.updateUser(email.toLowerCase().trim(), {
-        name: name || existingUser.name,
-        role: selectedRole,
-        team_id: linkedTeamId,
-        privacy_policy_accepted: 1,
-        terms_accepted: 1,
-        acceptable_use_accepted: 1,
-        policies_accepted_at: new Date().toISOString(),
-        email_preferences: 1,
-        is_under_18: 0,
-        guardian_email: null
-      });
-      return res.render('admin/add-judge', {
-        title: 'Add User',
-        error: null,
-        success: `User ${email} already exists. Updated role to ${selectedRole}${linkedTeamId ? ' and linked to team' : ''}. All policies have been accepted.`,
-        teams
-      });
-    }
-
-    // Create new user
-    await db.createUser(
-      email.toLowerCase().trim(),
-      name || null,
-      selectedRole,
-      linkedTeamId,
-      {
-        privacy_policy_accepted: 1,
-        terms_accepted: 1,
-        acceptable_use_accepted: 1,
-        policies_accepted_at: new Date().toISOString(),
-        email_preferences: 1,
-        is_under_18: 0,
-        guardian_email: null
+    if (!existingUser) {
+      try {
+        const eventSettings = await db.getEventSettings(req.eventId);
+        const appUrl = process.env.APP_URL || 'http://localhost:3000';
+        await emailService.sendJudgeConfirmation(
+          email.toLowerCase().trim(),
+          name || email.split('@')[0],
+          selectedRole,
+          eventSettings.event_name || 'Hackathon',
+          appUrl
+        );
+      } catch (emailError) {
+        console.error('Error sending judge confirmation email:', emailError);
       }
-    );
-
-    // Send confirmation email
-    try {
-      const emailService = require('../services/email');
-      const eventSettings = await db.getEventSettings();
-      const appUrl = process.env.APP_URL || 'http://localhost:3000';
-      await emailService.sendJudgeConfirmation(
-        email.toLowerCase().trim(),
-        name || email.split('@')[0],
-        selectedRole,
-        eventSettings.event_name || 'Hackathon',
-        appUrl
-      );
-    } catch (emailError) {
-      console.error('Error sending judge confirmation email:', emailError);
-      // Don't fail user creation if email fails
     }
 
     res.render('admin/add-judge', {
       title: 'Add User',
       error: null,
-      success: `User ${email} (${selectedRole}) added successfully!${linkedTeamId ? ' Linked to team.' : ''} A confirmation email has been sent.`,
+      success: existingUser
+        ? `User ${email} already exists. Updated this event role to ${selectedRole}${linkedTeamId ? ' and linked to team' : ''}.`
+        : `User ${email} (${selectedRole}) added for this event.${linkedTeamId ? ' Linked to team.' : ''}`,
       teams
     });
   } catch (error) {
     console.error('Add user error:', error);
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
     res.render('admin/add-judge', {
       title: 'Add User',
       error: 'An error occurred. Please try again.',
@@ -513,11 +572,8 @@ router.post('/judges/add', requireAdmin, async (req, res) => {
 router.post('/judges/:email/update', requireAdmin, async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email);
-    const { role } = req.body;
-
-    // When updating from admin panel, also ensure all policies are accepted
-    await db.updateUser(email, {
-      role: role || 'judge',
+    const { role, accountType, schoolName } = req.body;
+    const policyData = {
       privacy_policy_accepted: 1,
       terms_accepted: 1,
       acceptable_use_accepted: 1,
@@ -525,7 +581,19 @@ router.post('/judges/:email/update', requireAdmin, async (req, res) => {
       email_preferences: 1,
       is_under_18: 0,
       guardian_email: null
-    });
+    };
+    if (accountType === 'school' || accountType === 'individual') {
+      const existing = await db.getUserByEmail(email);
+      if (existing && accountType === 'individual') {
+        const schoolTeams = await db.countSchoolTeams(existing.id);
+        if (schoolTeams > 0) {
+          return res.redirect('/admin?error=school_has_teams');
+        }
+      }
+      policyData.account_type = accountType;
+      policyData.school_name = accountType === 'school' ? (schoolName || null) : null;
+    }
+    await assignEventRole(email, null, role || 'judge', null, req.eventId, policyData);
 
     res.redirect('/admin?success=judge_updated');
   } catch (error) {
@@ -540,7 +608,7 @@ router.post('/judges/:email/update', requireAdmin, async (req, res) => {
 // GET event settings page
 router.get('/settings', requireAdmin, async (req, res) => {
   try {
-    const settings = await db.getEventSettings();
+    const settings = await db.getEventSettings(req.eventId);
     res.render('admin/settings', {
       title: 'Event Settings',
       settings,
@@ -583,7 +651,7 @@ router.post('/settings', requireAdmin, upload.single('logo'), async (req, res) =
     }
 
     // Get current settings to preserve logo and landing page settings if not uploading a new one
-    const currentSettings = await db.getEventSettings();
+    const currentSettings = await db.getEventSettings(req.eventId);
 
     const settings = {
       event_name: eventName || 'Hackathon',
@@ -609,17 +677,17 @@ router.post('/settings', requireAdmin, upload.single('logo'), async (req, res) =
       settings.logo_filename = req.file.filename;
     }
 
-    await db.updateEventSettings(settings);
+    await db.updateEventSettings(req.eventId, settings);
 
     res.render('admin/settings', {
       title: 'Event Settings',
-      settings: await db.getEventSettings(),
+      settings: await db.getEventSettings(req.eventId),
       error: null,
       success: 'Event settings updated successfully!'
     });
   } catch (error) {
     console.error('Update event settings error:', error);
-    const settings = await db.getEventSettings();
+    const settings = await db.getEventSettings(req.eventId);
     res.render('admin/settings', {
       title: 'Event Settings',
       settings,
@@ -632,7 +700,7 @@ router.post('/settings', requireAdmin, upload.single('logo'), async (req, res) =
 // GET landing page settings
 router.get('/landing', requireAdmin, async (req, res) => {
   try {
-    const settings = await db.getEventSettings();
+    const settings = await db.getEventSettings(req.eventId);
     res.render('admin/landing', {
       title: 'Landing Page Settings',
       settings,
@@ -654,7 +722,7 @@ router.post('/landing', requireAdmin, upload.single('heroBanner'), async (req, r
     const { heroBannerLink, landingPageContent, eventDatesText } = req.body;
 
     // Get current settings to preserve existing values
-    const currentSettings = await db.getEventSettings();
+    const currentSettings = await db.getEventSettings(req.eventId);
 
     const settings = {
       event_name: currentSettings.event_name || 'Hackathon',
@@ -680,17 +748,17 @@ router.post('/landing', requireAdmin, upload.single('heroBanner'), async (req, r
       settings.hero_banner_image = req.file.filename;
     }
 
-    await db.updateEventSettings(settings);
+    await db.updateEventSettings(req.eventId, settings);
 
     res.render('admin/landing', {
       title: 'Landing Page Settings',
-      settings: await db.getEventSettings(),
+      settings: await db.getEventSettings(req.eventId),
       error: null,
       success: 'Landing page settings updated successfully!'
     });
   } catch (error) {
     console.error('Update landing page settings error:', error);
-    const settings = await db.getEventSettings();
+    const settings = await db.getEventSettings(req.eventId);
     res.render('admin/landing', {
       title: 'Landing Page Settings',
       settings,
@@ -703,8 +771,8 @@ router.post('/landing', requireAdmin, upload.single('heroBanner'), async (req, r
 // GET category management page
 router.get('/categories', requireAdmin, async (req, res) => {
   try {
-    const categories = await db.getCategories();
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const categories = await db.getCategories(req.eventId);
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
 
     // Create a map of category usage with counts
     const categoryUsage = {};
@@ -746,13 +814,13 @@ router.post('/categories/add', requireAdmin, async (req, res) => {
     const normalizedCategoryName = categoryName.trim();
 
     // Check if category already exists
-    const existingCategories = await db.getCategoryNames();
+    const existingCategories = await db.getCategoryNames(req.eventId);
     if (existingCategories.includes(normalizedCategoryName)) {
       return res.redirect('/admin/categories?error=exists');
     }
 
     // Add the category
-    await db.syncCategories([{ name: normalizedCategoryName }]);
+    await db.syncCategories(req.eventId, [{ name: normalizedCategoryName }]);
 
     res.redirect('/admin/categories?success=added');
   } catch (error) {
@@ -767,21 +835,14 @@ router.post('/categories/:id/delete', requireAdmin, async (req, res) => {
     const categoryId = parseInt(req.params.id);
 
     // Check if category has teams assigned
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
     const hasTeams = teams.some(team => team.category_id === categoryId);
 
     if (hasTeams) {
       return res.redirect('/admin/categories?error=has_teams');
     }
 
-    // Delete the category
-    const dbInstance = db.getDb();
-    await new Promise((resolve, reject) => {
-      dbInstance.run('DELETE FROM categories WHERE id = ?', [categoryId], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await db.deleteCategory(req.eventId, categoryId);
 
     res.redirect('/admin/categories?success=deleted');
   } catch (error) {
@@ -793,8 +854,8 @@ router.post('/categories/:id/delete', requireAdmin, async (req, res) => {
 // GET table management page
 router.get('/tables', requireAdmin, async (req, res) => {
   try {
-    const tables = await db.getTables();
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const tables = await db.getTables(req.eventId);
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
 
     // Create a map of table usage
     const tableUsage = {};
@@ -832,13 +893,13 @@ router.post('/tables/add', requireAdmin, async (req, res) => {
     const normalizedTableName = tableName.trim();
 
     // Check if table already exists
-    const existingTables = await db.getTableNames();
+    const existingTables = await db.getTableNames(req.eventId);
     if (existingTables.includes(normalizedTableName)) {
       return res.redirect('/admin/tables?error=exists');
     }
 
     // Add the table
-    await db.syncTables([{ name: normalizedTableName }]);
+    await db.syncTables(req.eventId, [{ name: normalizedTableName }]);
 
     res.redirect('/admin/tables?success=added');
   } catch (error) {
@@ -853,21 +914,14 @@ router.post('/tables/:name/delete', requireAdmin, async (req, res) => {
     const tableName = decodeURIComponent(req.params.name);
 
     // Check if table has teams assigned
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
     const hasTeams = teams.some(team => team.table_name === tableName);
 
     if (hasTeams) {
       return res.redirect('/admin/tables?error=has_teams');
     }
 
-    // Delete the table
-    const dbInstance = db.getDb();
-    await new Promise((resolve, reject) => {
-      dbInstance.run('DELETE FROM tables WHERE name = ?', [tableName], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await db.deleteTable(req.eventId, tableName);
 
     res.redirect('/admin/tables?success=deleted');
   } catch (error) {
@@ -889,7 +943,7 @@ router.post('/tables/bulk-delete', requireAdmin, async (req, res) => {
     }
 
     // Check if any tables have teams assigned
-    const teams = await db.getTeams(null, true); // Include sensitive fields for admin
+    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
     const tablesWithTeams = tablesToDelete.filter(tableName =>
       teams.some(team => team.table_name === tableName)
     );
@@ -898,20 +952,7 @@ router.post('/tables/bulk-delete', requireAdmin, async (req, res) => {
       return res.redirect('/admin/tables?error=has_teams');
     }
 
-    // Delete all selected tables
-    const dbInstance = db.getDb();
-    const placeholders = tablesToDelete.map(() => '?').join(',');
-
-    await new Promise((resolve, reject) => {
-      dbInstance.run(
-        `DELETE FROM tables WHERE name IN (${placeholders})`,
-        tablesToDelete,
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
+    await db.deleteTables(req.eventId, tablesToDelete);
 
     res.redirect(`/admin/tables?success=bulk_deleted&count=${tablesToDelete.length}`);
   } catch (error) {
@@ -923,7 +964,7 @@ router.post('/tables/bulk-delete', requireAdmin, async (req, res) => {
 // POST initialize chessboard tables (A1-P10)
 router.post('/tables/initialize-chessboard', requireAdmin, async (req, res) => {
   try {
-    await db.initializeChessBoardTables();
+    await db.initializeChessBoardTables(req.eventId);
     res.redirect('/admin/tables?success=chessboard_initialized');
   } catch (error) {
     console.error('Initialize chessboard tables error:', error);
@@ -1098,15 +1139,9 @@ router.post('/judges/import/process', requireAdmin, async (req, res) => {
         };
 
         if (existingUser) {
-          // Update existing user with policies accepted
-          await db.updateUser(email, {
-            name: name || existingUser.name,
-            role: role,
-            ...policyData
-          });
+          await assignEventRole(email, name || existingUser.name, role, null, req.eventId, policyData);
         } else {
-          // Create new user with policies accepted
-          await db.createUser(email, name, role, null, policyData);
+          await assignEventRole(email, name, role, null, req.eventId, policyData);
         }
 
         // If team field is mapped, try to assign team
@@ -1119,7 +1154,7 @@ router.post('/judges/import/process', requireAdmin, async (req, res) => {
         if (isNewUser) {
           try {
             const emailService = require('../services/email');
-            const eventSettings = await db.getEventSettings();
+            const eventSettings = await db.getEventSettings(req.eventId);
             const appUrl = process.env.APP_URL || 'http://localhost:3000';
             await emailService.sendJudgeConfirmation(
               email,
@@ -1164,11 +1199,11 @@ router.get('/volunteers', requireAdmin, async (req, res) => {
   try {
     const status = req.query.status || null;
     const search = req.query.search || null;
-    const volunteers = await db.getVolunteers(status, search);
-    const eventSettings = await db.getEventSettings();
+    const volunteers = await db.getVolunteers(req.eventId, status, search);
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     // Count by status (without search filter for accurate counts)
-    const allVolunteers = await db.getVolunteers();
+    const allVolunteers = await db.getVolunteers(req.eventId);
     const pendingCount = allVolunteers.filter(v => v.status === 'pending').length;
     const approvedCount = allVolunteers.filter(v => v.status === 'approved').length;
     const deniedCount = allVolunteers.filter(v => v.status === 'denied').length;
@@ -1218,49 +1253,30 @@ router.post('/volunteers/:id/status', requireAdmin, async (req, res) => {
       return res.redirect('/admin/volunteers?error=volunteer_not_found');
     }
 
+    if (volunteer.event_id && volunteer.event_id !== req.eventId) {
+      return res.redirect('/admin/volunteers?error=wrong_event');
+    }
+
     let userId = null;
 
-    // If approving, create a user account with judge role
     if (status === 'approved') {
       try {
-        // Check if user already exists
+        const policyData = {
+          privacy_policy_accepted: 1,
+          terms_accepted: 1,
+          acceptable_use_accepted: 1,
+          policies_accepted_at: new Date().toISOString(),
+          email_preferences: 1,
+          is_under_18: 0,
+          guardian_email: null
+        };
         const existingUser = await db.getUserByEmail(volunteer.email);
+        const user = await assignEventRole(volunteer.email, volunteer.name, 'judge', null, req.eventId, policyData);
+        userId = user.id;
 
-        if (existingUser) {
-          // User already exists, link to existing user
-          userId = existingUser.id;
-          // Update role to judge if not already admin, and set all policies as accepted
-          if (existingUser.role !== 'admin') {
-            await db.updateUser(volunteer.email, {
-              role: 'judge',
-              privacy_policy_accepted: 1,
-              terms_accepted: 1,
-              acceptable_use_accepted: 1,
-              policies_accepted_at: new Date().toISOString(),
-              email_preferences: 1,
-              is_under_18: 0,
-              guardian_email: null
-            });
-          }
-        } else {
-          // Create new user account
-          const newUser = await db.createUser(
-            volunteer.email,
-            volunteer.name,
-            'judge',
-            null,
-            {
-              privacy_policy_accepted: 1,
-              terms_accepted: 1,
-              acceptable_use_accepted: 1,
-              policies_accepted_at: new Date().toISOString()
-            }
-          );
-          userId = newUser.id;
-
-          // Send judge confirmation email
+        if (!existingUser) {
           try {
-            const eventSettings = await db.getEventSettings();
+            const eventSettings = await db.getEventSettings(req.eventId);
             await emailService.sendJudgeConfirmation(
               volunteer.email,
               volunteer.name,
@@ -1273,7 +1289,6 @@ router.post('/volunteers/:id/status', requireAdmin, async (req, res) => {
         }
       } catch (userError) {
         console.error('Error creating user account for volunteer:', userError);
-        // Continue with approval even if user creation fails
       }
     }
 
@@ -1282,7 +1297,7 @@ router.post('/volunteers/:id/status', requireAdmin, async (req, res) => {
 
     // Send email notification
     try {
-      const eventSettings = await db.getEventSettings();
+      const eventSettings = await db.getEventSettings(req.eventId);
       await emailService.sendVolunteerStatusUpdate(
         volunteer.email,
         volunteer.name,
@@ -1319,13 +1334,13 @@ router.post('/volunteers/:id/notes', requireAdmin, async (req, res) => {
 // GET lock judging / select winners page
 router.get('/judging/finalize', requireAdmin, async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const divisions = eventSettings.divisions || [];
 
     // Get teams with scores for each division
     const divisionTeams = {};
     for (const division of divisions) {
-      divisionTeams[division] = await db.getTeamsByDivisionWithScores(division);
+      divisionTeams[division] = await db.getTeamsByDivisionWithScores(req.eventId, division);
     }
 
     // Auto-populate winners based on top 3 scores if winners haven't been set
@@ -1348,7 +1363,7 @@ router.get('/judging/finalize', requireAdmin, async (req, res) => {
       // Save auto-selected winners if any were found
       if (Object.keys(winners).length > 0) {
         try {
-          await db.setWinners(winners);
+          await db.setWinners(req.eventId, winners);
         } catch (err) {
           console.error('Error auto-saving winners:', err);
           // Continue even if save fails - winners will still be shown in the form
@@ -1380,7 +1395,7 @@ router.post('/judging/lock', requireAdmin, async (req, res) => {
     const { locked } = req.body;
     const isLocked = locked === '1' || locked === 'true' || locked === true;
 
-    await db.setJudgingLocked(isLocked);
+    await db.setJudgingLocked(req.eventId, isLocked);
 
     res.redirect(`/admin/judging/finalize?success=${isLocked ? 'judging_locked' : 'judging_unlocked'}`);
   } catch (error) {
@@ -1389,34 +1404,27 @@ router.post('/judging/lock', requireAdmin, async (req, res) => {
   }
 });
 
+const normalizeWinnerId = (value) => {
+  if (value == null || value === '') return null;
+  const asNumber = Number(value);
+  return Number.isInteger(asNumber) ? asNumber : value;
+};
+
 // POST set winners
 router.post('/judging/winners', requireAdmin, async (req, res) => {
   try {
-    const { winners } = req.body;
-
-    // Parse winners - expect format: { division: [teamId1, teamId2, teamId3] }
+    const eventSettings = await db.getEventSettings(req.eventId);
+    const divisions = eventSettings.divisions || [];
     const winnersObj = {};
-    if (typeof winners === 'string') {
-      try {
-        winnersObj = JSON.parse(winners);
-      } catch (e) {
-        // If not JSON, parse from form data format
-        const eventSettings = await db.getEventSettings();
-        const divisions = eventSettings.divisions || [];
-        for (const division of divisions) {
-          const first = req.body[`winner_${division}_1`];
-          const second = req.body[`winner_${division}_2`];
-          const third = req.body[`winner_${division}_3`];
-          if (first || second || third) {
-            winnersObj[division] = [first, second, third].filter(id => id);
-          }
-        }
-      }
-    } else {
-      winnersObj = winners || {};
+
+    for (const division of divisions) {
+      const first = normalizeWinnerId(req.body[`winner_${division}_1`]);
+      const second = normalizeWinnerId(req.body[`winner_${division}_2`]);
+      const third = normalizeWinnerId(req.body[`winner_${division}_3`]);
+      winnersObj[division] = [first, second, third].filter(id => id != null);
     }
 
-    await db.setWinners(winnersObj);
+    await db.setWinners(req.eventId, winnersObj);
 
     res.redirect('/admin/judging/finalize?success=winners_updated');
   } catch (error) {
@@ -1425,13 +1433,164 @@ router.post('/judging/winners', requireAdmin, async (req, res) => {
   }
 });
 
+router.get('/scores', requireAdmin, async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings(req.eventId);
+    const currentRound = eventSettings.current_round || 1;
+    const parsedRound = parseInt(req.query.round, 10);
+    const selectedRound = Number.isInteger(parsedRound) && parsedRound > 0 ? parsedRound : null;
+    const teamFilter = typeof req.query.team === 'string' ? req.query.team : '';
+    const judgeFilter = typeof req.query.judge === 'string' ? req.query.judge : '';
+    const standingsRound = selectedRound || currentRound;
+
+    const scores = await db.listScores(req.eventId, {
+      round: selectedRound,
+      teamName: teamFilter,
+      judgeEmail: judgeFilter
+    });
+    const standings = await db.getTableResults(req.eventId, standingsRound);
+    const roundOptions = [];
+    for (let round = 1; round <= currentRound; round += 1) {
+      roundOptions.push(round);
+    }
+
+    res.render('admin/scores', {
+      title: 'Scores',
+      scores,
+      standings,
+      standingsRound,
+      selectedRound,
+      teamFilter,
+      judgeFilter,
+      roundOptions,
+      requiredJudgesPerTeam: db.getRequiredJudgesPerTeam(),
+      query: req.query
+    });
+  } catch (error) {
+    console.error('Error loading admin scores:', error);
+    res.render('error', {
+      message: 'Failed to load scores',
+      error: process.env.NODE_ENV === 'development' ? error : {}
+    });
+  }
+});
+
+router.post('/scores/tie-break', requireAdmin, async (req, res) => {
+  try {
+    const round = parseInt(req.body.round, 10);
+    const division = req.body.division;
+    const teamName = req.body.teamName;
+    const direction = req.body.direction === 'up' ? 'up' : 'down';
+    const teamFilter = typeof req.body.team === 'string' ? req.body.team : '';
+    const judgeFilter = typeof req.body.judge === 'string' ? req.body.judge : '';
+
+    const redirectParams = new URLSearchParams();
+    if (Number.isInteger(round) && round > 0) redirectParams.set('round', String(round));
+    if (teamFilter) redirectParams.set('team', teamFilter);
+    if (judgeFilter) redirectParams.set('judge', judgeFilter);
+
+    if (!division || !teamName || !Number.isInteger(round) || round < 1) {
+      redirectParams.set('error', 'tie_break_failed');
+      return res.redirect(`/admin/scores?${redirectParams.toString()}`);
+    }
+
+    const standings = await db.getTableResults(req.eventId, round);
+    const teams = standings[division] || [];
+    const team = teams.find(entry => entry.team_name === teamName);
+    if (!team || !team.scoreTied) {
+      redirectParams.set('error', 'tie_break_failed');
+      return res.redirect(`/admin/scores?${redirectParams.toString()}`);
+    }
+
+    const group = teams.filter(entry => entry.total_score === team.total_score);
+    const index = group.findIndex(entry => entry.team_name === teamName);
+    const swapWith = direction === 'up' ? index - 1 : index + 1;
+    if (swapWith < 0 || swapWith >= group.length) {
+      return res.redirect(`/admin/scores?${redirectParams.toString()}`);
+    }
+
+    const ordered = group.map(entry => entry.team_name);
+    const current = ordered[index];
+    ordered[index] = ordered[swapWith];
+    ordered[swapWith] = current;
+    await db.saveTieBreakOrder(req.eventId, division, round, ordered);
+
+    redirectParams.set('success', 'tie_break');
+    res.redirect(`/admin/scores?${redirectParams.toString()}`);
+  } catch (error) {
+    console.error('Error saving tie break:', error);
+    res.redirect('/admin/scores?error=tie_break_failed');
+  }
+});
+
+router.get('/scores/:id/edit', requireAdmin, async (req, res) => {
+  try {
+    const score = await db.getScoreById(parseInt(req.params.id, 10));
+    if (!score) {
+      return res.redirect('/admin/scores?error=score_not_found');
+    }
+
+    res.render('admin/edit-score', {
+      title: 'Edit Score',
+      score,
+      query: req.query
+    });
+  } catch (error) {
+    console.error('Error loading score:', error);
+    res.render('error', {
+      message: 'Failed to load score',
+      error: process.env.NODE_ENV === 'development' ? error : {}
+    });
+  }
+});
+
+router.post('/scores/:id/update', requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const score = await db.getScoreById(id);
+    if (!score) {
+      return res.redirect('/admin/scores?error=score_not_found');
+    }
+
+    const scoreNum = parseFloat(req.body.score);
+    if (!Number.isFinite(scoreNum) || scoreNum < 0) {
+      return res.redirect(`/admin/scores/${id}/edit?error=${encodeURIComponent('Enter a score of 0 or higher.')}`);
+    }
+
+    const notes = req.body.notes || '';
+    const notesError = await checkAndReturnError(notes, 'Notes');
+    if (notesError) {
+      return res.redirect(`/admin/scores/${id}/edit?error=${encodeURIComponent(notesError)}`);
+    }
+
+    await db.updateScoreById(id, scoreNum, notes);
+    res.redirect('/admin/scores?success=score_updated');
+  } catch (error) {
+    console.error('Error updating score:', error);
+    res.redirect('/admin/scores?error=score_update_failed');
+  }
+});
+
+router.post('/scores/:id/delete', requireAdmin, async (req, res) => {
+  try {
+    const deleted = await db.deleteScoreById(parseInt(req.params.id, 10));
+    if (!deleted) {
+      return res.redirect('/admin/scores?error=score_not_found');
+    }
+    res.redirect('/admin/scores?success=score_deleted');
+  } catch (error) {
+    console.error('Error deleting score:', error);
+    res.redirect('/admin/scores?error=score_delete_failed');
+  }
+});
+
 // GET newsletter page
 router.get('/newsletter', requireAdmin, async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     // Get user counts by role for display
-    const allUsers = await db.getAllUsers();
+    const allUsers = await db.getAllUsers(req.eventId);
     const userCounts = {
       participants: allUsers.filter(u => u.role === 'participant').length,
       judges: allUsers.filter(u => u.role === 'judge').length,
@@ -1439,7 +1598,7 @@ router.get('/newsletter', requireAdmin, async (req, res) => {
     };
 
     // Get approved volunteers count
-    const approvedVolunteers = await db.getVolunteers('approved');
+    const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
     userCounts.volunteers = approvedVolunteers.length;
 
     res.render('admin/newsletter', {
@@ -1463,17 +1622,17 @@ router.get('/newsletter', requireAdmin, async (req, res) => {
 router.post('/newsletter/send', requireAdmin, async (req, res) => {
   try {
     const { subject, content, recipients, confirmSend, sendToken } = req.body;
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     // Require explicit confirmation to prevent accidental sends
     if (confirmSend !== 'true') {
-      const allUsers = await db.getAllUsers();
+      const allUsers = await db.getAllUsers(req.eventId);
       const userCounts = {
         participants: allUsers.filter(u => u.role === 'participant').length,
         judges: allUsers.filter(u => u.role === 'judge').length,
         admins: allUsers.filter(u => u.role === 'admin').length
       };
-      const approvedVolunteers = await db.getVolunteers('approved');
+      const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
       userCounts.volunteers = approvedVolunteers.length;
 
       return res.render('admin/newsletter', {
@@ -1490,13 +1649,13 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
     }
 
     if (!subject || !content) {
-      const allUsers = await db.getAllUsers();
+      const allUsers = await db.getAllUsers(req.eventId);
       const userCounts = {
         participants: allUsers.filter(u => u.role === 'participant').length,
         judges: allUsers.filter(u => u.role === 'judge').length,
         admins: allUsers.filter(u => u.role === 'admin').length
       };
-      const approvedVolunteers = await db.getVolunteers('approved');
+      const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
       userCounts.volunteers = approvedVolunteers.length;
 
       return res.render('admin/newsletter', {
@@ -1517,13 +1676,13 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
     const recipientsArray = Array.isArray(recipients) ? recipients : (recipients ? [recipients] : []);
 
     if (!recipientsArray || recipientsArray.length === 0) {
-      const allUsers = await db.getAllUsers();
+      const allUsers = await db.getAllUsers(req.eventId);
       const userCounts = {
         participants: allUsers.filter(u => u.role === 'participant').length,
         judges: allUsers.filter(u => u.role === 'judge').length,
         admins: allUsers.filter(u => u.role === 'admin').length
       };
-      const approvedVolunteers = await db.getVolunteers('approved');
+      const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
       userCounts.volunteers = approvedVolunteers.length;
 
       return res.render('admin/newsletter', {
@@ -1541,7 +1700,7 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
 
     // Collect all recipient emails based on selected groups
     const recipientEmails = [];
-    const allUsers = await db.getAllUsers();
+    const allUsers = await db.getAllUsers(req.eventId);
 
     if (recipientsArray.includes('participants')) {
       const participants = allUsers.filter(u => u.role === 'participant' && u.email);
@@ -1559,7 +1718,7 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
     }
 
     if (recipientsArray.includes('volunteers')) {
-      const approvedVolunteers = await db.getVolunteers('approved');
+      const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
       approvedVolunteers.forEach(v => {
         // Use user_email if linked, otherwise use volunteer email
         const email = v.user_email || v.email;
@@ -1585,7 +1744,7 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
         judges: allUsers.filter(u => u.role === 'judge').length,
         admins: allUsers.filter(u => u.role === 'admin').length
       };
-      const approvedVolunteers = await db.getVolunteers('approved');
+      const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
       userCounts.volunteers = approvedVolunteers.length;
 
       return res.render('admin/newsletter', {
@@ -1603,8 +1762,8 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
 
     // Check if this newsletter was already sent (prevent duplicates)
     // Create a hash from subject, content, and recipients to uniquely identify this newsletter
-    const sendHash = db.createNewsletterSendHash(subject, content, recipientsArray);
-    const existingSend = await db.checkNewsletterAlreadySent(sendHash);
+    const sendHash = db.createNewsletterSendHash(req.eventId, subject, content, recipientsArray);
+    const existingSend = await db.checkNewsletterAlreadySent(req.eventId, sendHash);
 
     if (existingSend) {
       const userCounts = {
@@ -1612,7 +1771,7 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
         judges: allUsers.filter(u => u.role === 'judge').length,
         admins: allUsers.filter(u => u.role === 'admin').length
       };
-      const approvedVolunteers = await db.getVolunteers('approved');
+      const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
       userCounts.volunteers = approvedVolunteers.length;
 
       const sentDate = new Date(existingSend.sent_at).toLocaleString();
@@ -1640,6 +1799,7 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
     // Log the newsletter send in the database
     try {
       await db.logNewsletterSend(
+        req.eventId,
         sendHash,
         subject,
         content,
@@ -1662,7 +1822,7 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
         participants: allUsers.filter(u => u.role === 'participant').length,
         judges: allUsers.filter(u => u.role === 'judge').length,
         admins: allUsers.filter(u => u.role === 'admin').length,
-        volunteers: (await db.getVolunteers('approved')).length
+        volunteers: (await db.getVolunteers(req.eventId, 'approved')).length
       },
       error: result.failed > 0 ? `Newsletter sent to ${result.sent} recipients, but ${result.failed} failed.` : null,
       success: result.failed === 0 ? `Newsletter successfully sent to ${result.sent} recipients!` : null,
@@ -1671,14 +1831,14 @@ router.post('/newsletter/send', requireAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error('Send newsletter error:', error);
-    const eventSettings = await db.getEventSettings();
-    const allUsers = await db.getAllUsers();
+    const eventSettings = await db.getEventSettings(req.eventId);
+    const allUsers = await db.getAllUsers(req.eventId);
     const userCounts = {
       participants: allUsers.filter(u => u.role === 'participant').length,
       judges: allUsers.filter(u => u.role === 'judge').length,
       admins: allUsers.filter(u => u.role === 'admin').length
     };
-    const approvedVolunteers = await db.getVolunteers('approved');
+    const approvedVolunteers = await db.getVolunteers(req.eventId, 'approved');
     userCounts.volunteers = approvedVolunteers.length;
 
     res.render('admin/newsletter', {

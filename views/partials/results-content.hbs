@@ -30,8 +30,13 @@
             </div>
 
             <!-- Team Name -->
-            <div class="flex-1 min-w-0">
+            <div class="flex-1 min-w-0 flex items-center gap-1">
                 <span class="text-xs font-medium text-gray-900 truncate">{{team_name}}</span>
+                {{#if scoreTied}}
+                {{#unless tieResolved}}
+                <span class="text-amber-700 flex-shrink-0">Tied</span>
+                {{/unless}}
+                {{/if}}
             </div>
 
             <!-- Table -->

@@ -1,37 +1,48 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
-const { requireJudge } = require('../middleware/rbac');
+const { requireJudge, requireSelectedEvent } = require('../middleware/rbac');
 const { checkAndReturnError } = require('../middleware/validation');
+
+const scoreEligibilityMessage = (reason) => {
+  if (reason === 'team_full') {
+    return 'This team already has the required number of judges for this round.';
+  }
+  return 'This team is not assigned to you. Use the judge queue to get a team.';
+};
 
 // Middleware to require authentication
 const requireAuth = (req, res, next) => {
   if (!req.session.user) {
     return res.redirect('/auth/login');
   }
+  if (!req.eventId) {
+    return res.redirect('/events');
+  }
   next();
 };
+
+router.use(requireSelectedEvent);
 
 // GET judge queue page - shows stats and next table button
 router.get('/judge-queue', requireJudge, async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const round = eventSettings.current_round || req.session.currentRound || 1;
     const judgeEmail = req.session.user.email;
 
     // Get queue statistics
-    const queueStats = await db.getJudgeQueueStats(round);
+    const queueStats = await db.getJudgeQueueStats(req.eventId, round);
     
     // Get teams this judge has judged
-    const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
+    const judgedTeams = await db.getJudgedTeamsByJudge(req.eventId, judgeEmail);
     const judgedTeamNames = new Set(judgedTeams.map(t => t.team_name));
     
     // Get current incomplete assignments (locked but not completed)
-    const currentAssignments = await db.getCurrentAssignmentsForJudge(judgeEmail, round);
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(req.eventId, judgeEmail, round);
     const currentAssignmentTeamNames = new Set(currentAssignments.map(a => a.team_name));
     
-    // Get required judges per team from env (default to 2)
-    const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+    const requiredJudgesPerTeam = db.getRequiredJudgesPerTeam();
     
     // Get judging locked status
     const judgingLocked = eventSettings.judging_locked || false;
@@ -39,7 +50,7 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
     // Determine which teams can be self-assigned by this judge
     const queueStatsWithSelfAssign = await Promise.all(queueStats.map(async (team) => {
       // Check if team is locked by another judge
-      const isLocked = await db.isTeamLocked(team.team_name, round);
+      const isLocked = await db.isTeamLocked(req.eventId, team.team_name, round);
       
       // Determine if this judge can self-assign this team
       const canSelfAssign = !judgingLocked &&
@@ -68,6 +79,7 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
       totalTeams,
       teamsNeedingJudges,
       myTeamCount,
+      requiredJudgesPerTeam,
       eventSettings,
       judgingLocked,
       query: req.query
@@ -84,7 +96,7 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
 // GET next team - assigns and redirects to scoring
 router.get('/next-team', requireJudge, async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     
     // Check if judging is locked
     if (eventSettings.judging_locked) {
@@ -95,7 +107,7 @@ router.get('/next-team', requireJudge, async (req, res) => {
     const judgeEmail = req.session.user.email;
 
     // Check if judge already has an incomplete assignment
-    const currentAssignments = await db.getCurrentAssignmentsForJudge(judgeEmail, round);
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(req.eventId, judgeEmail, round);
     if (currentAssignments && currentAssignments.length > 0) {
       // Redirect to the first incomplete assignment
       const firstAssignment = currentAssignments[0];
@@ -109,14 +121,13 @@ router.get('/next-team', requireJudge, async (req, res) => {
     
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       // Get next available team for this judge
-      nextTeam = await db.getNextTeamForJudge(judgeEmail, round);
+      nextTeam = await db.getNextTeamForJudge(req.eventId, judgeEmail, round);
 
       if (!nextTeam) {
-        // Get required judges per team from env (default to 2)
-        const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+        const requiredJudgesPerTeam = db.getRequiredJudgesPerTeam();
         
         // Check if all teams have required judges or if judge has judged all available teams
-        const queueStats = await db.getJudgeQueueStats(round);
+        const queueStats = await db.getJudgeQueueStats(req.eventId, round);
         const allTeamsComplete = queueStats.every(t => t.judge_count >= requiredJudgesPerTeam);
         
         if (allTeamsComplete) {
@@ -127,7 +138,7 @@ router.get('/next-team', requireJudge, async (req, res) => {
       }
 
       // Double-check: Verify this judge hasn't already judged this team
-      const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
+      const judgedTeams = await db.getJudgedTeamsByJudge(req.eventId, judgeEmail);
       const hasJudgedThisTeam = judgedTeams.some(t => t.team_name === nextTeam.name);
       
       if (hasJudgedThisTeam) {
@@ -137,7 +148,7 @@ router.get('/next-team', requireJudge, async (req, res) => {
       }
 
       // Try to atomically lock the team
-      lockResult = await db.lockTeamForJudge(judgeEmail, nextTeam.name, round);
+      lockResult = await db.lockTeamForJudge(req.eventId, judgeEmail, nextTeam.name, round);
       
       if (lockResult.success) {
         // Successfully locked the team
@@ -174,7 +185,7 @@ router.get('/next-team', requireJudge, async (req, res) => {
 // GET assign specific team - allows judge to self-assign a specific team
 router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     
     // Check if judging is locked
     if (eventSettings.judging_locked) {
@@ -185,11 +196,10 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
     const judgeEmail = req.session.user.email;
     const teamName = decodeURIComponent(req.params.teamName);
     
-    // Get required judges per team from env (default to 2)
-    const requiredJudgesPerTeam = parseInt(process.env.JUDGES_PER_TEAM || '2', 10);
+    const requiredJudgesPerTeam = db.getRequiredJudgesPerTeam();
     
     // Check if judge already has an incomplete assignment
-    const currentAssignments = await db.getCurrentAssignmentsForJudge(judgeEmail, round);
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(req.eventId, judgeEmail, round);
     if (currentAssignments && currentAssignments.length > 0) {
       // Check if this is the same team they're already assigned to
       const isAlreadyAssigned = currentAssignments.some(a => a.team_name === teamName);
@@ -203,7 +213,7 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
     }
     
     // Verify this judge hasn't already judged this team (ever)
-    const judgedTeams = await db.getJudgedTeamsByJudge(judgeEmail);
+    const judgedTeams = await db.getJudgedTeamsByJudge(req.eventId, judgeEmail);
     const hasJudgedThisTeam = judgedTeams.some(t => t.team_name === teamName);
     
     if (hasJudgedThisTeam) {
@@ -211,7 +221,7 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
     }
     
     // Check if team exists and get its info
-    const queueStats = await db.getJudgeQueueStats(round);
+    const queueStats = await db.getJudgeQueueStats(req.eventId, round);
     const teamInfo = queueStats.find(t => t.team_name === teamName);
     
     if (!teamInfo) {
@@ -224,20 +234,22 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
     }
     
     // Check if team is locked by another judge
-    const isLocked = await db.isTeamLocked(teamName, round);
+    const isLocked = await db.isTeamLocked(req.eventId, teamName, round);
     if (isLocked) {
       return res.redirect('/scores/judge-queue?error=team_locked');
     }
     
     // Try to atomically lock the team
-    const lockResult = await db.lockTeamForJudge(judgeEmail, teamName, round);
+    const lockResult = await db.lockTeamForJudge(req.eventId, judgeEmail, teamName, round);
     
     if (!lockResult.success) {
       if (lockResult.reason === 'already_locked') {
         return res.redirect('/scores/judge-queue?error=team_locked');
-      } else {
-        return res.redirect('/scores/judge-queue?error=assignment_failed');
       }
+      if (lockResult.reason === 'team_full') {
+        return res.redirect('/scores/judge-queue?error=team_complete');
+      }
+      return res.redirect('/scores/judge-queue?error=assignment_failed');
     }
     
     // Successfully locked the team, redirect to score entry
@@ -256,7 +268,7 @@ router.get('/select-team', requireJudge, async (req, res) => {
     req.session.currentRound = round;
 
     // Get all teams from database
-    const allTeams = await db.getTeams();
+    const allTeams = await db.getTeams(req.eventId);
     
     // Filter out sensitive data (contact_email) for non-admin users
     const filteredTeams = allTeams.map(team => {
@@ -269,7 +281,7 @@ router.get('/select-team', requireJudge, async (req, res) => {
     });
     
     // Get event settings for divisions
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const divisions = eventSettings.divisions || [];
 
     // Filter teams by division if specified
@@ -278,8 +290,10 @@ router.get('/select-team', requireJudge, async (req, res) => {
       : filteredTeams;
 
     // Get existing scores for this judge in this round
-    const existingScores = await db.getJudgeScores(req.session.user.email, round);
+    const existingScores = await db.getJudgeScores(req.eventId, req.session.user.email, round);
     const scoredTeams = new Set(existingScores.map(s => s.team_name));
+    const currentAssignments = await db.getCurrentAssignmentsForJudge(req.eventId, req.session.user.email, round);
+    const assignedTeams = currentAssignments.map(assignment => assignment.team_name);
 
     // Group teams by division
     const teamsByDivision = {};
@@ -292,7 +306,7 @@ router.get('/select-team', requireJudge, async (req, res) => {
     });
 
     // Check if current round is locked
-    const isRoundLocked = await db.isRoundLocked(round);
+    const isRoundLocked = await db.isRoundLocked(req.eventId, round);
 
     res.render('scores/select-team', {
       title: 'Select Team',
@@ -302,8 +316,10 @@ router.get('/select-team', requireJudge, async (req, res) => {
       round,
       selectedDivision,
       scoredTeams: Array.from(scoredTeams),
+      assignedTeams,
       existingScores,
       isRoundLocked,
+      requiredJudgesPerTeam: db.getRequiredJudgesPerTeam(),
       query: req.query
     });
   } catch (error) {
@@ -319,7 +335,7 @@ router.get('/select-team', requireJudge, async (req, res) => {
 router.get('/enter/:teamName', requireJudge, async (req, res) => {
   try {
     // Check if judging is locked
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     if (eventSettings.judging_locked) {
       return res.render('error', {
         message: 'Judging has been locked. No new scores can be entered.',
@@ -331,7 +347,7 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
     const round = parseInt(req.query.round) || req.session.currentRound || 1;
 
     // Check if round is locked
-    const isLocked = await db.isRoundLocked(round);
+    const isLocked = await db.isRoundLocked(req.eventId, round);
     if (isLocked) {
       return res.render('error', {
         message: `Round ${round} has been locked. Scores can no longer be entered or edited for this round.`
@@ -339,15 +355,21 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
     }
 
     // Get team table
-    const tableName = await db.getTeamTable(teamName);
+    const tableName = await db.getTeamTable(req.eventId, teamName);
     if (!tableName) {
       return res.render('error', {
         message: 'Team not found.'
       });
     }
 
-    // Check if score already exists
-    const existingScore = await db.getScore(req.session.user.email, teamName, round);
+    const eligibility = await db.canJudgeSubmitNewScore(req.eventId, req.session.user.email, teamName, round);
+    if (!eligibility.ok) {
+      return res.render('error', {
+        message: scoreEligibilityMessage(eligibility.reason)
+      });
+    }
+
+    const existingScore = await db.getScore(req.eventId, req.session.user.email, teamName, round);
 
     res.render('scores/enter', {
       title: `Score Entry - ${teamName}`,
@@ -371,7 +393,7 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
 router.post('/submit', requireJudge, async (req, res) => {
   try {
     // Check if judging is locked
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     if (eventSettings.judging_locked) {
       return res.render('error', {
         message: 'Judging has been locked. No new scores can be entered.',
@@ -391,10 +413,17 @@ router.post('/submit', requireJudge, async (req, res) => {
     }
 
     // Check if round is locked
-    const isLocked = await db.isRoundLocked(roundNum);
+    const isLocked = await db.isRoundLocked(req.eventId, roundNum);
     if (isLocked) {
       return res.render('error', {
         message: `Round ${roundNum} has been locked. Scores can no longer be entered or edited for this round.`
+      });
+    }
+
+    const eligibility = await db.canJudgeSubmitNewScore(req.eventId, judgeEmail, teamName, roundNum);
+    if (!eligibility.ok) {
+      return res.render('error', {
+        message: scoreEligibilityMessage(eligibility.reason)
       });
     }
 
@@ -408,10 +437,10 @@ router.post('/submit', requireJudge, async (req, res) => {
     }
 
     // Save to local database
-    await db.saveScore(judgeEmail, teamName, tableName, roundNum, scoreNum, notes || '');
+    await db.saveScore(req.eventId, judgeEmail, teamName, tableName, roundNum, scoreNum, notes || '');
 
     // Mark team assignment as completed
-    await db.markAssignmentCompleted(judgeEmail, teamName, roundNum);
+    await db.markAssignmentCompleted(req.eventId, judgeEmail, teamName, roundNum);
 
     // Check if this was from the auto-queue system
     // Handle both string '1' and number 1, and check both body and query
@@ -447,10 +476,10 @@ router.post('/submit', requireJudge, async (req, res) => {
 // GET my scores page (judges and admins only)
 router.get('/my-scores', requireJudge, async (req, res) => {
   try {
-    const scores = await db.getJudgeScores(req.session.user.email);
+    const scores = await db.getJudgeScores(req.eventId, req.session.user.email);
 
     // Get event settings for locked rounds
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const lockedRounds = JSON.parse(eventSettings.locked_rounds || '[]');
 
     // Group scores by round only
@@ -484,7 +513,7 @@ router.get('/results', requireAuth, async (req, res) => {
     const round = parseInt(req.query.round) || req.session.currentRound || 1;
     const selectedDivision = req.query.division || null;
     
-    const allResults = await db.getTableResults(round, null);
+    const allResults = await db.getTableResults(req.eventId, round, null);
     
     // Filter results by division if specified
     let results = allResults;
@@ -493,11 +522,11 @@ router.get('/results', requireAuth, async (req, res) => {
     }
     
     // Get event settings for divisions
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const divisions = eventSettings.divisions || [];
     
     // Get top team per category for sidebar
-    const categoryLeaders = await db.getTopTeamPerCategory(round) || [];
+    const categoryLeaders = await db.getTopTeamPerCategory(req.eventId, round) || [];
 
     res.render('scores/results', {
       title: 'Live Leaderboard',
@@ -523,7 +552,7 @@ router.get('/results/json', requireAuth, async (req, res) => {
     const round = parseInt(req.query.round) || req.session.currentRound || 1;
     const selectedDivision = req.query.division || null;
     
-    const allResults = await db.getTableResults(round, null);
+    const allResults = await db.getTableResults(req.eventId, round, null);
     
     // Filter results by division if specified
     let results = allResults;
@@ -532,7 +561,7 @@ router.get('/results/json', requireAuth, async (req, res) => {
     }
     
     // Get top team per category for sidebar
-    const categoryLeaders = await db.getTopTeamPerCategory(round) || [];
+    const categoryLeaders = await db.getTopTeamPerCategory(req.eventId, round) || [];
 
     // Render just the results partial
     res.render('partials/results-content', {
@@ -550,8 +579,8 @@ router.get('/results/json', requireAuth, async (req, res) => {
 // GET table map (for modal display)
 router.get('/table-map', requireJudge, async (req, res) => {
   try {
-    const tables = await db.getTableNames();
-    const allTeams = await db.getTeams();
+    const tables = await db.getTableNames(req.eventId);
+    const allTeams = await db.getTeams(req.eventId);
 
     // Filter out sensitive data (contact_email) for non-admin users
     const teams = allTeams.map(team => {

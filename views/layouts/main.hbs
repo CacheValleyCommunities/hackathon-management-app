@@ -78,6 +78,10 @@
                                 class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
                                 Home
                             </a>
+                            <a href="/events"
+                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
+                                {{#if eventSettings.id}}{{eventSettings.event_name}}{{else}}Events{{/if}}
+                            </a>
 
                             {{#if user}}
 
@@ -116,10 +120,15 @@
                             {{/if}}
 
                             {{#if (eq user.role 'participant')}}
-                            <!-- Participant Dashboard -->
                             <a href="/participant"
                                 class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
                                 Dashboard
+                            </a>
+                            {{/if}}
+                            {{#if (eq user.role 'chaperone')}}
+                            <a href="/school"
+                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
+                                School teams
                             </a>
                             {{/if}}
                             {{/if}}
@@ -152,8 +161,7 @@
                                     style="display: none;">
                                     <div class="py-1">
                                         <div class="px-4 py-2 border-b border-gray-200">
-                                            <p class="text-xs text-gray-500">{{#if (eq user.role 'admin')}}Admin{{else
-                                                if (eq user.role 'judge')}}Judge{{else}}Participant{{/if}}</p>
+                                            <p class="text-xs text-gray-500">{{#if (eq user.role 'admin')}}Admin{{else if (eq user.role 'judge')}}Judge{{else if (eq user.role 'chaperone')}}Chaperone{{else if (eq user.account_type 'school')}}School{{else}}Participant{{/if}}</p>
                                             <p class="text-sm font-medium text-gray-900 truncate">{{user.email}}</p>
                                         </div>
                                         <a href="/account/settings" @click="open = false"
@@ -287,7 +295,7 @@
                             </svg>
                             <span>Login</span>
                         </a>
-                        <a href="/register"
+                        <a href="{{#if user}}/events{{else}}/auth/login{{/if}}"
                             class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg transition font-medium min-h-[44px]">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -324,6 +332,10 @@
                                 </path>
                             </svg>
                             <span class="font-medium">Home</span>
+                        </a>
+                        <a href="/events"
+                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
+                            <span class="font-medium">{{#if eventSettings.id}}{{eventSettings.event_name}}{{else}}Events{{/if}}</span>
                         </a>
 
                         {{#if (or (eq user.role 'judge') (eq user.role 'admin'))}}
@@ -385,6 +397,16 @@
                                     d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                             </svg>
                             <span class="font-medium">Admin Dashboard</span>
+                        </a>
+
+                        <a href="/admin/scores"
+                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
+                            <svg class="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                                </path>
+                            </svg>
+                            <span class="font-medium">Scores</span>
                         </a>
 
                         <!-- Add User -->
@@ -465,6 +487,12 @@
                                 </path>
                             </svg>
                             <span class="font-medium">Live Scores</span>
+                        </a>
+                        {{/if}}
+                        {{#if (eq user.role 'chaperone')}}
+                        <a href="/school"
+                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
+                            <span class="font-medium">School teams</span>
                         </a>
                         {{/if}}
                         {{/if}}

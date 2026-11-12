@@ -2,12 +2,17 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 
-// GET public projects page - shows all teams and their projects
-router.get('/', async (req, res) => {
+const canSeeContact = async (req, team) => {
+  if (!req.session || !req.session.user) return false;
+  if (req.session.user.role === 'admin') return true;
+  return db.isTeamLeader(team.id, req.session.user.email);
+};
+
+const renderProjectIndex = async (req, res, event) => {
   try {
     const selectedDivision = req.query.division || null;
-    const teams = await db.getAllTeamsForProjects();
-    const eventSettings = await db.getEventSettings();
+    const teams = await db.getAllTeamsForProjects(event.id);
+    const eventSettings = event;
     
     // Parse divisions from eventSettings
     let divisions = [];
@@ -31,20 +36,7 @@ router.get('/', async (req, res) => {
     const teamsWithScreenshots = await Promise.all(filteredTeams.map(async (team) => {
       const screenshots = await db.getTeamScreenshots(team.id);
       
-      // Check if user is authorized to see contact_email (team owner or admin)
-      let canViewContactEmail = false;
-      if (req.session && req.session.user) {
-        const user = req.session.user;
-        if (user.role === 'admin') {
-          canViewContactEmail = true;
-        } else if (user.role === 'participant' && user.team_id === team.id) {
-          // Check if user is team leader
-          const isLeader = await db.isTeamLeader(team.id, user.email);
-          if (isLeader) {
-            canViewContactEmail = true;
-          }
-        }
-      }
+      let canViewContactEmail = await canSeeContact(req, team);
       
       const teamData = { ...team };
       // contact_email is already excluded from getAllTeamsForProjects, but ensure it's not present
@@ -61,7 +53,7 @@ router.get('/', async (req, res) => {
     
     // Prepare meta tags for Open Graph and Twitter
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-    const projectsUrl = `${appUrl}/projects${selectedDivision ? `?division=${encodeURIComponent(selectedDivision)}` : ''}`;
+    const projectsUrl = `${appUrl}/events/${event.slug}/projects${selectedDivision ? `?division=${encodeURIComponent(selectedDivision)}` : ''}`;
     
     let metaImage = null;
     if (eventSettings.logo_filename) {
@@ -98,25 +90,30 @@ router.get('/', async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error : {}
     });
   }
+};
+
+router.get('/', (req, res) => {
+  if (req.eventSettings && req.eventSettings.slug) {
+    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    return res.redirect(`/events/${req.eventSettings.slug}/projects${query}`);
+  }
+  return res.redirect('/events');
 });
 
-// GET individual project page
-router.get('/:teamId', async (req, res) => {
+const renderProjectDetail = async (req, res, event) => {
   try {
-    const teamId = parseInt(req.params.teamId);
-    // Don't include sensitive fields for public access
+    const teamId = parseInt(req.params.teamId, 10);
     const team = await db.getTeamById(teamId, false);
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = event;
     
-    if (!team) {
+    if (!team || team.event_id !== event.id) {
       return res.render('error', {
         message: 'Project not found'
       });
     }
 
-    // Check if project is published (admins can always view)
     const isAdmin = req.session && req.session.user && req.session.user.role === 'admin';
-    const isTeamOwner = req.session && req.session.user && req.session.user.team_id === teamId;
+    const isTeamOwner = req.session && req.session.user ? await db.isTeamLeader(teamId, req.session.user.email) : false;
     
     if (!team.is_published && !isAdmin && !isTeamOwner) {
       return res.render('error', {
@@ -124,20 +121,7 @@ router.get('/:teamId', async (req, res) => {
       });
     }
     
-    // Check if user is authorized to see contact_email (team owner or admin)
-    let canViewContactEmail = false;
-    if (req.session && req.session.user) {
-      const user = req.session.user;
-      if (user.role === 'admin') {
-        canViewContactEmail = true;
-      } else if (user.role === 'participant' && user.team_id === teamId) {
-        // Check if user is team leader
-        const isLeader = await db.isTeamLeader(teamId, user.email);
-        if (isLeader) {
-          canViewContactEmail = true;
-        }
-      }
-    }
+    let canViewContactEmail = isAdmin || isTeamOwner;
     
     // Only include contact_email if user is authorized
     const teamData = { ...team };
@@ -149,7 +133,7 @@ router.get('/:teamId', async (req, res) => {
     
     // Prepare meta tags for Open Graph and Twitter
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-    const projectUrl = `${appUrl}/projects/${teamId}`;
+    const projectUrl = `${appUrl}/events/${event.slug}/projects/${teamId}`;
     
     // Get first screenshot or banner image for meta image
     let metaImage = null;
@@ -196,7 +180,16 @@ router.get('/:teamId', async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error : {}
     });
   }
+};
+
+router.get('/:teamId', (req, res) => {
+  if (req.eventSettings && req.eventSettings.slug) {
+    return res.redirect(`/events/${req.eventSettings.slug}/projects/${req.params.teamId}`);
+  }
+  return res.redirect('/events');
 });
 
 module.exports = router;
+module.exports.renderProjectIndex = renderProjectIndex;
+module.exports.renderProjectDetail = renderProjectDetail;
 

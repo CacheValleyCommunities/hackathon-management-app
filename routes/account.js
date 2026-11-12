@@ -29,10 +29,12 @@ router.get('/settings', requireAuth, async (req, res) => {
       user: {
         email: user.email,
         name: user.name || '',
-        email_preferences: user.email_preferences === 1
+        email_preferences: user.email_preferences === 1,
+        account_type: user.account_type || 'individual',
+        school_name: user.school_name || ''
       },
-      error: error === 'preferences_updated' ? null : error === 'update_failed' ? 'Failed to update preferences' : error === 'confirmation_required' ? 'Please type DELETE to confirm account deletion' : error === 'admin_cannot_delete' ? 'Admin accounts cannot be deleted through this interface' : error === 'delete_failed' ? 'Failed to delete account' : null,
-      success: success === 'preferences_updated' ? 'Email preferences updated successfully' : null
+      error: error === 'update_failed' ? 'Failed to update preferences' : error === 'school_has_teams' ? 'This account still owns school teams, so it stays a school account.' : error === 'confirmation_required' ? 'Please type DELETE to confirm account deletion' : error === 'admin_cannot_delete' ? 'Admin accounts cannot be deleted through this interface' : error === 'delete_failed' ? 'Failed to delete account' : null,
+      success: success === 'preferences_updated' ? 'Email preferences updated successfully' : success === 'school_updated' ? 'School account updated.' : null
     });
   } catch (error) {
     console.error('Error loading account settings:', error);
@@ -58,6 +60,30 @@ router.post('/settings/email-preferences', requireAuth, async (req, res) => {
     res.redirect('/account/settings?success=preferences_updated');
   } catch (error) {
     console.error('Error updating email preferences:', error);
+    res.redirect('/account/settings?error=update_failed');
+  }
+});
+
+router.post('/settings/school', requireAuth, async (req, res) => {
+  try {
+    const email = req.session.user.email;
+    const user = await db.getUserByEmail(email);
+    const wantsSchool = req.body.account_type === 'school';
+    if (!wantsSchool) {
+      const owned = await db.countSchoolTeams(user.id);
+      if (owned > 0) {
+        return res.redirect('/account/settings?error=school_has_teams');
+      }
+    }
+    await db.updateUser(email, {
+      account_type: wantsSchool ? 'school' : 'individual',
+      school_name: wantsSchool ? (req.body.school_name || '').trim() : null
+    });
+    req.session.user.account_type = wantsSchool ? 'school' : 'individual';
+    req.session.user.school_name = wantsSchool ? (req.body.school_name || '').trim() : null;
+    res.redirect('/account/settings?success=school_updated');
+  } catch (error) {
+    console.error('Error updating school account:', error);
     res.redirect('/account/settings?error=update_failed');
   }
 });

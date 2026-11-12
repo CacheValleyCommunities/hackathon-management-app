@@ -4,14 +4,27 @@ const db = require('../db/database');
 const emailService = require('../services/email');
 const { checkAndReturnError } = require('../middleware/validation');
 
+const resolveVolunteerEvent = async (req) => {
+  if (req.eventId && req.eventSettings && req.eventSettings.id) return req.eventSettings;
+  const requested = parseInt(req.body?.eventId || req.query?.eventId, 10);
+  if (requested) {
+    const event = await db.getEventById(requested);
+    if (event && event.status === 'open') return event;
+  }
+  const openEvents = (await db.listEvents()).filter(event => event.status === 'open');
+  return openEvents.length === 1 ? openEvents[0] : null;
+};
+
 // GET volunteer signup form
 router.get('/signup', async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await resolveVolunteerEvent(req);
+    const openEvents = (await db.listEvents()).filter(event => event.status === 'open');
     res.render('volunteers/signup', {
       title: 'Volunteer Signup',
       layout: 'main',
-      eventSettings,
+      eventSettings: eventSettings || { event_name: 'Hackathon' },
+      openEvents,
       error: null,
       success: null
     });
@@ -21,6 +34,7 @@ router.get('/signup', async (req, res) => {
       title: 'Volunteer Signup',
       layout: 'main',
       eventSettings: { event_name: 'Hackathon' },
+      openEvents: [],
       error: 'An error occurred loading the form.',
       success: null
     });
@@ -31,7 +45,19 @@ router.get('/signup', async (req, res) => {
 router.post('/signup', async (req, res) => {
   try {
     const { name, email, phone, company, help_judging, help_logistics, help_mentor, description } = req.body;
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await resolveVolunteerEvent(req);
+    if (!eventSettings) {
+      const openEvents = (await db.listEvents()).filter(event => event.status === 'open');
+      return res.render('volunteers/signup', {
+        title: 'Volunteer Signup',
+        layout: 'main',
+        eventSettings: { event_name: 'Hackathon' },
+        openEvents,
+        error: 'Choose which event you are volunteering for.',
+        success: null,
+        formData: req.body
+      });
+    }
 
     // Validation
     if (!name || !email || !email.includes('@')) {
@@ -68,7 +94,7 @@ router.post('/signup', async (req, res) => {
     }
 
     // Check if email already exists
-    const existingVolunteers = await db.getVolunteers();
+    const existingVolunteers = await db.getVolunteers(eventSettings.id);
     const emailExists = existingVolunteers.some(v => v.email.toLowerCase() === email.toLowerCase().trim());
     
     if (emailExists) {
@@ -96,7 +122,7 @@ router.post('/signup', async (req, res) => {
     }
 
     // Create volunteer
-    const volunteer = await db.createVolunteer({
+    const volunteer = await db.createVolunteer(eventSettings.id, {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       phone: phone ? phone.trim() : null,
@@ -148,7 +174,9 @@ router.post('/signup', async (req, res) => {
     });
   } catch (error) {
     console.error('Error processing volunteer signup:', error);
-    const eventSettings = await db.getEventSettings().catch(() => ({ event_name: 'Hackathon' }));
+    const eventSettings = req.eventId
+      ? await db.getEventSettings(req.eventId)
+      : { event_name: 'Hackathon' };
     res.render('volunteers/signup', {
       title: 'Volunteer Signup',
       layout: 'main',

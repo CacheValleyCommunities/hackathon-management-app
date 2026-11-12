@@ -6,7 +6,7 @@ const emailService = require('../services/email');
 // GET Privacy Policy
 router.get('/privacy', async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
     
@@ -39,7 +39,7 @@ router.get('/privacy', async (req, res) => {
 // GET Terms of Use
 router.get('/terms', async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
     
@@ -72,7 +72,7 @@ router.get('/terms', async (req, res) => {
 // GET Acceptable Use Policy
 router.get('/acceptable-use', async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
     
@@ -105,7 +105,7 @@ router.get('/acceptable-use', async (req, res) => {
 // GET Data Removal Request Form
 router.get('/data-removal-request', async (req, res) => {
   try {
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const metaImage = eventSettings.logo_filename ? `${appUrl}/uploads/${eventSettings.logo_filename}` : null;
     
@@ -143,7 +143,7 @@ router.get('/data-removal-request', async (req, res) => {
 router.post('/data-removal-request', async (req, res) => {
   try {
     const { requester_name, requester_email, requester_relationship, data_subject_email, data_subject_name, reason, additional_info } = req.body;
-    const eventSettings = await db.getEventSettings();
+    const eventSettings = await db.getEventSettings(req.eventId);
 
     // Validation
     if (!requester_name || !requester_email || !requester_email.includes('@')) {
@@ -196,7 +196,7 @@ router.post('/data-removal-request', async (req, res) => {
     });
   } catch (error) {
     console.error('Error processing data removal request:', error);
-    const eventSettings = await db.getEventSettings().catch(() => ({ event_name: 'Hackathon' }));
+    const eventSettings = await db.getEventSettings(req.eventId).catch(() => ({ event_name: 'Hackathon' }));
     res.render('policies/data-removal-request', {
       title: 'Data Removal Request',
       layout: 'main',
