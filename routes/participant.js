@@ -193,6 +193,7 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
       });
     }
     const teamId = currentTeam.id;
+    const userRole = req.session.user.role === 'admin' ? 'admin' : req.eventRole;
 
     if (currentTeam.registration_type === 'school' && (req.body.teamMembers || req.body.isUnder18 || req.body.guardianEmail)) {
       return res.status(400).render('error', {
@@ -370,6 +371,8 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
     // Redirect based on user role
     if (userRole === 'admin') {
       res.redirect(`/admin/teams/${teamId}/edit?success=team_updated`);
+    } else if (userRole === 'chaperone' || currentTeam.registration_type === 'school') {
+      res.redirect('/school?success=team_updated');
     } else {
       res.redirect('/participant?success=team_updated');
     }
