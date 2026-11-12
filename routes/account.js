@@ -27,6 +27,7 @@ router.get('/settings', requireAuth, async (req, res) => {
     res.render('account/settings', {
       title: 'Account Settings',
       user: {
+        ...res.locals.user,
         email: user.email,
         name: user.name || '',
         email_preferences: user.email_preferences === 1,

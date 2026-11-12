@@ -93,7 +93,6 @@ router.get('/', async (req, res) => {
 
   res.render('index', {
     title: 'Hackathon',
-    user: req.session.user,
     currentRound,
     tables,
     teams,
