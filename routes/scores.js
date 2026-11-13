@@ -51,9 +51,11 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
     const queueStatsWithSelfAssign = await Promise.all(queueStats.map(async (team) => {
       // Check if team is locked by another judge
       const isLocked = await db.isTeamLocked(req.eventId, team.team_name, round);
+      const isAbsent = db.isConfirmedAbsent(team.absence_count, team.score_count);
       
       // Determine if this judge can self-assign this team
       const canSelfAssign = !judgingLocked &&
+        !isAbsent &&
         !judgedTeamNames.has(team.team_name) &&  // Never judged
         !currentAssignmentTeamNames.has(team.team_name) &&  // Not currently assigned
         team.judge_count < requiredJudgesPerTeam &&  // Needs more judges
@@ -61,13 +63,14 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
       
       return {
         ...team,
+        isAbsent,
         canSelfAssign
       };
     }));
     
     // Calculate summary stats
     const totalTeams = queueStats.length;
-    const teamsNeedingJudges = queueStats.filter(t => t.judge_count < requiredJudgesPerTeam).length;
+    const teamsNeedingJudges = queueStatsWithSelfAssign.filter(t => !t.isAbsent && t.judge_count < requiredJudgesPerTeam).length;
     const myTeamCount = judgedTeams.length;
 
     res.render('scores/judge-queue', {
@@ -128,7 +131,9 @@ router.get('/next-team', requireJudge, async (req, res) => {
         
         // Check if all teams have required judges or if judge has judged all available teams
         const queueStats = await db.getJudgeQueueStats(req.eventId, round);
-        const allTeamsComplete = queueStats.every(t => t.judge_count >= requiredJudgesPerTeam);
+        const allTeamsComplete = queueStats.every(t =>
+          t.judge_count >= requiredJudgesPerTeam || db.isConfirmedAbsent(t.absence_count, t.score_count)
+        );
         
         if (allTeamsComplete) {
           return res.redirect('/scores/judge-queue?message=all_complete');
@@ -227,6 +232,10 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
     if (!teamInfo) {
       return res.redirect('/scores/judge-queue?error=team_not_found');
     }
+
+    if (db.isConfirmedAbsent(teamInfo.absence_count, teamInfo.score_count)) {
+      return res.redirect('/scores/judge-queue?error=team_absent');
+    }
     
     // Check if team already has enough judges
     if (teamInfo.judge_count >= requiredJudgesPerTeam) {
@@ -248,6 +257,9 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
       }
       if (lockResult.reason === 'team_full') {
         return res.redirect('/scores/judge-queue?error=team_complete');
+      }
+      if (lockResult.reason === 'team_absent') {
+        return res.redirect('/scores/judge-queue?error=team_absent');
       }
       return res.redirect('/scores/judge-queue?error=assignment_failed');
     }
@@ -384,6 +396,57 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
     console.error('Error loading score entry:', error);
     res.render('error', {
       message: 'An error occurred',
+      error: process.env.NODE_ENV === 'development' ? error : {}
+    });
+  }
+});
+
+const absenceFailureMessage = (reason) => {
+  if (reason === 'already_scored') {
+    return 'You already scored this team.';
+  }
+  if (reason === 'already_absent') {
+    return 'You already marked this team absent.';
+  }
+  return 'This team is not assigned to you. Use the judge queue to get a team.';
+};
+
+// POST mark the assigned team absent when the judge cannot find them
+router.post('/mark-absent', requireJudge, async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings(req.eventId);
+    if (eventSettings.judging_locked) {
+      return res.redirect('/scores/judge-queue?error=judging_locked');
+    }
+
+    const teamName = req.body.teamName;
+    const roundNum = parseInt(req.body.round, 10) || 1;
+    if (!teamName) {
+      return res.redirect('/scores/judge-queue?error=team_not_found');
+    }
+
+    const isLocked = await db.isRoundLocked(req.eventId, roundNum);
+    if (isLocked) {
+      return res.render('error', {
+        message: `Round ${roundNum} has been locked. Scores can no longer be entered or edited for this round.`
+      });
+    }
+
+    const result = await db.markTeamAbsent(req.eventId, req.session.user.email, teamName, roundNum);
+    if (!result.ok) {
+      return res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?round=${roundNum}&auto=${req.body.auto || ''}&error=${encodeURIComponent(absenceFailureMessage(result.reason))}`);
+    }
+
+    const autoValue = req.body.auto;
+    const wasAutoAssigned = autoValue === '1' || autoValue === 1 || autoValue === true || autoValue === 'true';
+    if (wasAutoAssigned) {
+      return res.redirect('/scores/next-team');
+    }
+    return res.redirect('/scores/judge-queue?message=marked_absent');
+  } catch (error) {
+    console.error('Error marking team absent:', error);
+    res.render('error', {
+      message: 'Failed to mark the team absent. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error : {}
     });
   }

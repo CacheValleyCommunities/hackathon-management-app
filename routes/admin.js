@@ -1443,11 +1443,13 @@ router.get('/scores', requireAdmin, async (req, res) => {
     const judgeFilter = typeof req.query.judge === 'string' ? req.query.judge : '';
     const standingsRound = selectedRound || currentRound;
 
-    const scores = await db.listScores(req.eventId, {
+    const scoreFilters = {
       round: selectedRound,
       teamName: teamFilter,
       judgeEmail: judgeFilter
-    });
+    };
+    const scores = await db.listScores(req.eventId, scoreFilters);
+    const absences = await db.listAbsences(req.eventId, scoreFilters);
     const standings = await db.getTableResults(req.eventId, standingsRound);
     const roundOptions = [];
     for (let round = 1; round <= currentRound; round += 1) {
@@ -1457,6 +1459,7 @@ router.get('/scores', requireAdmin, async (req, res) => {
     res.render('admin/scores', {
       title: 'Scores',
       scores,
+      absences,
       standings,
       standingsRound,
       selectedRound,
@@ -1568,6 +1571,19 @@ router.post('/scores/:id/update', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error updating score:', error);
     res.redirect('/admin/scores?error=score_update_failed');
+  }
+});
+
+router.post('/absences/:id/delete', requireAdmin, async (req, res) => {
+  try {
+    const deleted = await db.deleteAbsenceById(parseInt(req.params.id, 10));
+    if (!deleted) {
+      return res.redirect('/admin/scores?error=absence_not_found');
+    }
+    res.redirect('/admin/scores?success=absence_deleted');
+  } catch (error) {
+    console.error('Error deleting absence:', error);
+    res.redirect('/admin/scores?error=absence_delete_failed');
   }
 });
 

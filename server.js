@@ -44,7 +44,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
     store: new SQLiteStore({
         db: 'sessions.db',
-        dir: './db'
+        dir: process.env.SESSION_DB_DIR || './db'
     }),
     secret: process.env.SESSION_SECRET || 'change-this-secret',
     resave: false,

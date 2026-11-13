@@ -24,6 +24,11 @@
             <p class="text-green-800 font-medium">Score deleted. That judge's slot for the team and round is open again.</p>
         </div>
         {{/if}}
+        {{#if (eq (lookup query 'success') 'absence_deleted')}}
+        <div class="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+            <p class="text-green-800 font-medium">Absence removed. That judge's slot is open again when they had not scored the team.</p>
+        </div>
+        {{/if}}
         {{#if (eq (lookup query 'success') 'tie_break')}}
         <div class="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
             <p class="text-green-800 font-medium">Tie-break order saved. Scores were not changed.</p>
@@ -105,6 +110,46 @@
             </div>
             {{else}}
             <p class="text-gray-500">No scores match these filters.</p>
+            {{/if}}
+        </div>
+
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold text-gray-900 mb-2">Absences</h2>
+            <p class="text-sm text-gray-600 mb-4">A judge marks a team absent when they cannot find them. Removing an absence reopens that judge's slot unless they also submitted a score.</p>
+            {{#if absences.length}}
+            <div class="border border-gray-200 rounded-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Round</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Team</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Table</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Judge</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {{#each absences}}
+                            <tr>
+                                <td class="px-4 py-3 text-sm text-gray-900">{{this.round}}</td>
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">{{this.team_name}}</td>
+                                <td class="px-4 py-3 text-sm text-gray-600">{{this.table_name}}</td>
+                                <td class="px-4 py-3 text-sm text-gray-600">{{this.judge_email}}</td>
+                                <td class="px-4 py-3 text-sm text-right">
+                                    <form method="POST" action="/admin/absences/{{this.id}}/delete" class="inline"
+                                        onsubmit="return confirm('Remove this absence? The judge slot opens again if this judge did not score the team.');">
+                                        <button type="submit" class="text-red-700 font-medium hover:underline">Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {{/each}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {{else}}
+            <p class="text-gray-500">No absences match these filters.</p>
             {{/if}}
         </div>
 

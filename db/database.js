@@ -336,6 +336,21 @@ const createTables = () => {
         db.run(`ALTER TABLE judge_team_assignments ADD COLUMN locked_at DATETIME`, () => { });
       });
 
+      db.run(`CREATE TABLE IF NOT EXISTS team_absences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        judge_email TEXT NOT NULL,
+        team_name TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, judge_email, team_name, round),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating team_absences table:', err);
+        }
+      });
+
       db.run(`CREATE TABLE IF NOT EXISTS tie_breaks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id INTEGER NOT NULL,
@@ -1624,6 +1639,11 @@ const close = () => {
   });
 };
 
+const ABSENCES_REQUIRED_TO_REMOVE = 2;
+
+const isConfirmedAbsent = (absenceCount, scoreCount) =>
+  Number(absenceCount || 0) >= ABSENCES_REQUIRED_TO_REMOVE && Number(scoreCount || 0) === 0;
+
 // Get the next team assignment for a judge in the current round
 const getNextTeamForJudge = (eventId, judgeEmail, round) => {
   return new Promise((resolve, reject) => {
@@ -1669,10 +1689,18 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
                 SELECT COUNT(*) FROM judge_team_assignments
                 WHERE event_id = ? AND team_name = t.name AND round = ?
                   AND completed = 0 AND locked_at IS NOT NULL AND judge_email != ?
-              ) as is_locked
+              ) as is_locked,
+              (
+                SELECT COUNT(*) FROM team_absences
+                WHERE event_id = ? AND team_name = t.name AND round = ?
+              ) as absence_count,
+              (
+                SELECT COUNT(*) FROM scores
+                WHERE event_id = ? AND team_name = t.name AND round = ?
+              ) as score_count
              FROM teams t
              WHERE t.event_id = ?`,
-            [eventId, round, eventId, round, eventId, round, judgeEmail, eventId, round, judgeEmail, eventId],
+            [eventId, round, eventId, round, eventId, round, judgeEmail, eventId, round, judgeEmail, eventId, round, eventId, round, eventId],
             (err, teamCounts) => {
               if (err) {
                 reject(err);
@@ -1680,10 +1708,14 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
               }
 
               const teamCountMap = {};
+              const absenceCountMap = {};
+              const scoreCountMap = {};
               const alreadyAssignedSet = new Set();
               const lockedTeamsSet = new Set();
               teamCounts.forEach(tc => {
                 teamCountMap[tc.team_name] = tc.judge_count;
+                absenceCountMap[tc.team_name] = tc.absence_count;
+                scoreCountMap[tc.team_name] = tc.score_count;
                 if (tc.already_assigned > 0) {
                   alreadyAssignedSet.add(tc.team_name);
                 }
@@ -1723,6 +1755,8 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
                       if (alreadyAssignedSet.has(t.name)) return false;
                       // Must not be locked by another judge
                       if (lockedTeamsSet.has(t.name)) return false;
+                      // Two absence reports with no score take the team out of the queue
+                      if (isConfirmedAbsent(absenceCountMap[t.name], scoreCountMap[t.name])) return false;
                       // Must still need more judges (prevent over-assignment)
                       const currentJudgeCount = teamCountMap[t.name] || 0;
                       if (currentJudgeCount >= requiredJudgesPerTeam) return false;
@@ -1784,6 +1818,94 @@ const assignJudgeToTeam = (eventId, judgeEmail, teamName, round) => {
   });
 };
 
+// Record that a judge could not find their assigned team, and free that judge.
+const markTeamAbsent = (eventId, judgeEmail, teamName, round) => {
+  return new Promise((resolve, reject) => {
+    db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+      if (beginErr) {
+        reject(beginErr);
+        return;
+      }
+
+      const fail = (err) => {
+        db.run('ROLLBACK', () => reject(err));
+      };
+
+      db.get(
+        `SELECT id FROM scores
+         WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?`,
+        [eventId, judgeEmail, teamName, round],
+        (scoreErr, score) => {
+          if (scoreErr) {
+            fail(scoreErr);
+            return;
+          }
+          if (score) {
+            db.run('ROLLBACK', () => resolve({ ok: false, reason: 'already_scored' }));
+            return;
+          }
+
+          db.get(
+            `SELECT id FROM judge_team_assignments
+             WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?
+               AND completed = 0 AND locked_at IS NOT NULL`,
+            [eventId, judgeEmail, teamName, round],
+            (assignErr, assignment) => {
+              if (assignErr) {
+                fail(assignErr);
+                return;
+              }
+              if (!assignment) {
+                db.run('ROLLBACK', () => resolve({ ok: false, reason: 'not_assigned' }));
+                return;
+              }
+
+              db.run(
+                `INSERT INTO team_absences (event_id, judge_email, team_name, round)
+                 VALUES (?, ?, ?, ?)`,
+                [eventId, judgeEmail, teamName, round],
+                function (insertErr) {
+                  if (insertErr) {
+                    db.run('ROLLBACK', () => {
+                      if (insertErr.code === 'SQLITE_CONSTRAINT') {
+                        resolve({ ok: false, reason: 'already_absent' });
+                        return;
+                      }
+                      reject(insertErr);
+                    });
+                    return;
+                  }
+
+                  const absenceId = this.lastID;
+                  db.run(
+                    `UPDATE judge_team_assignments
+                     SET completed = 1
+                     WHERE id = ?`,
+                    [assignment.id],
+                    (updateErr) => {
+                      if (updateErr) {
+                        fail(updateErr);
+                        return;
+                      }
+                      db.run('COMMIT', (commitErr) => {
+                        if (commitErr) {
+                          fail(commitErr);
+                          return;
+                        }
+                        resolve({ ok: true, id: absenceId });
+                      });
+                    }
+                  );
+                }
+              );
+            }
+          );
+        }
+      );
+    });
+  });
+};
+
 // Mark a team assignment as completed
 const markAssignmentCompleted = (eventId, judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
@@ -1826,11 +1948,19 @@ const getJudgeQueueStats = (eventId, round) => {
             SELECT judge_email FROM scores
             WHERE event_id = ? AND team_name = t.name AND round = ?
           )
-        ) as judges
+        ) as judges,
+        (
+          SELECT COUNT(*) FROM team_absences
+          WHERE event_id = ? AND team_name = t.name AND round = ?
+        ) as absence_count,
+        (
+          SELECT COUNT(*) FROM scores
+          WHERE event_id = ? AND team_name = t.name AND round = ?
+        ) as score_count
        FROM teams t
        WHERE t.event_id = ?
        ORDER BY judge_count ASC, t.name`,
-      [eventId, round, eventId, round, eventId, round, eventId, round, eventId],
+      [eventId, round, eventId, round, eventId, round, eventId, round, eventId, round, eventId, round, eventId],
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -1959,12 +2089,22 @@ const lockTeamForJudge = (eventId, judgeEmail, teamName, round) => {
                   UNION
                   SELECT judge_email FROM scores
                   WHERE event_id = ? AND team_name = ? AND round = ? AND judge_email = ?
-                )) AS already_here`,
-            [eventId, teamName, round, eventId, teamName, round, eventId, teamName, round, judgeEmail, eventId, teamName, round, judgeEmail],
+                )) AS already_here,
+               (SELECT COUNT(*) FROM team_absences
+                  WHERE event_id = ? AND team_name = ? AND round = ?) AS absence_count,
+               (SELECT COUNT(*) FROM scores
+                  WHERE event_id = ? AND team_name = ? AND round = ?) AS score_count`,
+            [eventId, teamName, round, eventId, teamName, round, eventId, teamName, round, judgeEmail, eventId, teamName, round, judgeEmail, eventId, teamName, round, eventId, teamName, round],
             (capErr, capRow) => {
               if (capErr) {
                 db.run('ROLLBACK', () => { });
                 reject(capErr);
+                return;
+              }
+
+              if (isConfirmedAbsent(capRow && capRow.absence_count, capRow && capRow.score_count)) {
+                db.run('ROLLBACK', () => { });
+                resolve({ success: false, reason: 'team_absent' });
                 return;
               }
 
@@ -2667,6 +2807,111 @@ const updateScoreById = (id, score, notes) => {
   });
 };
 
+const listAbsences = (eventId, filters = {}) => {
+  return new Promise((resolve, reject) => {
+    let query = `
+      SELECT a.*, t.table_name
+      FROM team_absences a
+      LEFT JOIN teams t ON t.name = a.team_name AND t.event_id = a.event_id
+      WHERE a.event_id = ?
+    `;
+    const params = [eventId];
+
+    if (filters.round) {
+      query += ' AND a.round = ?';
+      params.push(filters.round);
+    }
+    if (filters.teamName) {
+      query += ' AND a.team_name LIKE ?';
+      params.push(`%${filters.teamName}%`);
+    }
+    if (filters.judgeEmail) {
+      query += ' AND a.judge_email LIKE ?';
+      params.push(`%${filters.judgeEmail}%`);
+    }
+
+    query += ' ORDER BY a.round DESC, a.team_name, a.judge_email';
+
+    db.all(query, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+};
+
+const deleteAbsenceById = (id) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM team_absences WHERE id = ?', [id], (err, row) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      if (!row) {
+        resolve(null);
+        return;
+      }
+
+      db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+        if (beginErr) {
+          reject(beginErr);
+          return;
+        }
+
+        const fail = (failure) => {
+          db.run('ROLLBACK', () => reject(failure));
+        };
+
+        db.run('DELETE FROM team_absences WHERE id = ?', [id], (deleteErr) => {
+          if (deleteErr) {
+            fail(deleteErr);
+            return;
+          }
+
+          db.get(
+            `SELECT id FROM scores
+             WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?`,
+            [row.event_id, row.judge_email, row.team_name, row.round],
+            (scoreErr, score) => {
+              if (scoreErr) {
+                fail(scoreErr);
+                return;
+              }
+
+              const commit = () => {
+                db.run('COMMIT', (commitErr) => {
+                  if (commitErr) {
+                    fail(commitErr);
+                    return;
+                  }
+                  resolve(row);
+                });
+              };
+
+              if (score) {
+                commit();
+                return;
+              }
+
+              db.run(
+                `DELETE FROM judge_team_assignments
+                 WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?`,
+                [row.event_id, row.judge_email, row.team_name, row.round],
+                (assignmentErr) => {
+                  if (assignmentErr) {
+                    fail(assignmentErr);
+                    return;
+                  }
+                  commit();
+                }
+              );
+            }
+          );
+        });
+      });
+    });
+  });
+};
+
 const deleteScoreById = (id) => {
   return new Promise((resolve, reject) => {
     db.get('SELECT * FROM scores WHERE id = ?', [id], (err, row) => {
@@ -2892,6 +3137,10 @@ module.exports = {
   getTableResults,
   saveTieBreakOrder,
   getRequiredJudgesPerTeam,
+  isConfirmedAbsent,
+  markTeamAbsent,
+  listAbsences,
+  deleteAbsenceById,
   getAssignment,
   teamHasRoomForJudge,
   canJudgeSubmitNewScore,

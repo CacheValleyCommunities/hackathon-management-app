@@ -104,6 +104,16 @@
             <p class="text-yellow-800">This team is currently being judged by another judge. Please select a different team.</p>
         </div>
         {{/if}}
+        {{#if (eq (lookup query 'error') 'team_absent')}}
+        <div class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-blue-800">This team has been marked absent. Please select a different team.</p>
+        </div>
+        {{/if}}
+        {{#if (eq (lookup query 'message') 'marked_absent')}}
+        <div class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-blue-800">Team marked absent. You can get another team.</p>
+        </div>
+        {{/if}}
 
         <!-- My Current Assignments -->
         {{#if currentAssignments.length}}
@@ -234,7 +244,10 @@
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-center">
-                                    {{#if (eq this.judge_count 0)}}
+                                    {{#if this.isAbsent}}
+                                    <span
+                                        class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-800">Absent</span>
+                                    {{else if (eq this.judge_count 0)}}
                                     <span
                                         class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Needs
                                         Judges</span>

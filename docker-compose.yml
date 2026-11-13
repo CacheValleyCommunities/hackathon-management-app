@@ -17,9 +17,12 @@ services:
       - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
       - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-}
       - MAILGUN_FROM_EMAIL=${MAILGUN_FROM_EMAIL:-}
+      - JUDGING_DB_PATH=/app/data/judging.db
+      - SESSION_DB_DIR=/app/data
     volumes:
-      # Persist database directory
-      - judging-db:/app/db
+      # Persist SQLite files only. Mounting this volume on /app/db hides
+      # database.js, so image rebuilds keep running a stale copy of that module.
+      - judging-db:/app/data
       # Persist uploads
       - judging-uploads:/app/public/uploads
     healthcheck:

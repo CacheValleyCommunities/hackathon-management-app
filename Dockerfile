@@ -11,9 +11,10 @@ RUN npm ci --only=production
 # Copy application files
 COPY . .
 
-# Create directories for uploads and database with proper permissions
-RUN mkdir -p public/uploads/screenshots db && \
-    chmod -R 755 db public/uploads
+# Create directories for uploads and SQLite data with proper permissions.
+# Application code stays in db/; only /app/data is volume-mounted.
+RUN mkdir -p public/uploads/screenshots db data && \
+    chmod -R 755 db data public/uploads
 
 # Expose port
 EXPOSE 3000
