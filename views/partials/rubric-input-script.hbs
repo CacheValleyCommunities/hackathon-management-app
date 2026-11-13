@@ -1,0 +1,87 @@
+<script>
+    (function () {
+        var root = document.querySelector('[data-rubric]');
+
+        function groups() {
+            var map = {};
+            if (!root) return map;
+            root.querySelectorAll('[data-rubric-choice]').forEach(function (input) {
+                if (!map[input.name]) map[input.name] = [];
+                map[input.name].push(input);
+            });
+            return map;
+        }
+
+        function updateRubric() {
+            if (!root) return;
+            var sum = 0;
+            var map = groups();
+            Object.keys(map).forEach(function (name) {
+                var chosen = map[name].find(function (input) { return input.checked; });
+                var anchor = root.querySelector('[data-rubric-anchor][data-for="' + name + '"]');
+                if (!chosen) return;
+                sum += Number(chosen.value);
+                if (anchor) anchor.textContent = chosen.getAttribute('data-anchor') || '';
+            });
+            var total = root.querySelector('[data-rubric-total]');
+            if (total) total.textContent = String(sum);
+        }
+
+        if (root) {
+            root.addEventListener('change', function () {
+                var message = root.querySelector('[data-rubric-message]');
+                if (message) {
+                    message.hidden = true;
+                    message.textContent = '';
+                }
+                updateRubric();
+            });
+            updateRubric();
+
+            var form = root.closest('form');
+            if (form) {
+                form.addEventListener('submit', function (event) {
+                    var missing = null;
+                    var map = groups();
+                    Object.keys(map).forEach(function (name) {
+                        if (missing) return;
+                        var chosen = map[name].find(function (input) { return input.checked; });
+                        if (!chosen) missing = map[name][0].getAttribute('data-label') || name;
+                    });
+                    var message = root.querySelector('[data-rubric-message]');
+                    if (missing) {
+                        event.preventDefault();
+                        if (message) {
+                            message.hidden = false;
+                            message.textContent = 'Choose a score from 1 to 5 for ' + missing + '.';
+                        }
+                        return;
+                    }
+                    if (message) {
+                        message.hidden = true;
+                        message.textContent = '';
+                    }
+                });
+            }
+        }
+
+        var confirmButton = document.getElementById('confirm-team-button');
+        if (confirmButton) {
+            confirmButton.addEventListener('click', function () {
+                var confirmPanel = document.getElementById('team-confirm');
+                var scoreForm = document.getElementById('score-form');
+                var title = document.getElementById('judge-score-title');
+                var absent = document.getElementById('absent-below-score');
+                var skip = document.getElementById('skip-below-score');
+                if (confirmPanel) confirmPanel.hidden = true;
+                if (scoreForm) scoreForm.hidden = false;
+                if (absent) absent.hidden = false;
+                if (skip) skip.hidden = false;
+                if (title) title.textContent = 'Score';
+                window.scrollTo(0, 0);
+                var firstChoice = document.querySelector('[data-rubric-choice]');
+                if (firstChoice) firstChoice.focus();
+            });
+        }
+    })();
+</script>

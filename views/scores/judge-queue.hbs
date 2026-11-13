@@ -1,19 +1,18 @@
-{{> judge-mobile}}
-<div class="hidden lg:block min-h-screen bg-white">
+<div class="min-h-screen bg-white pb-24 lg:pb-8">
     <!-- Header -->
     <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Judge Queue</h1>
                     <p class="text-sm text-gray-500 mt-2">Round {{round}} • Find your next team to judge</p>
                 </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="document.getElementById('table-map-modal').classList.remove('hidden')"
-                        class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg transition hover:bg-gray-50">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <button id="open-table-map" type="button"
+                        class="min-h-[48px] w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg transition hover:bg-gray-50">
                         View Table Map
                     </button>
-                    <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                    <a href="/" class="min-h-[48px] inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
                         ← Back to Home
                     </a>
                 </div>
@@ -115,6 +114,29 @@
             <p class="text-blue-800">Team marked absent. You can get another team.</p>
         </div>
         {{/if}}
+        {{#if (eq (lookup query 'message') 'team_skipped')}}
+        <div class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-blue-800">Team skipped. You will not judge that team again this round.</p>
+        </div>
+        {{/if}}
+        {{#if (eq (lookup query 'error') 'team_skipped')}}
+        <div class="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p class="text-yellow-800">You skipped this team. Please select a different team.</p>
+        </div>
+        {{/if}}
+
+        <div class="mb-8 grid grid-cols-2 gap-4">
+            <div class="border border-gray-200 rounded-lg p-6">
+                <p class="text-sm text-gray-500">You've judged</p>
+                <p class="text-3xl font-bold text-gray-900 mt-1">{{judgedThisRound}}</p>
+                <p class="text-sm text-gray-600 mt-1">this round</p>
+            </div>
+            <div class="border border-gray-200 rounded-lg p-6">
+                <p class="text-sm text-gray-500">Still need judges</p>
+                <p class="text-3xl font-bold text-gray-900 mt-1">{{teamsNeedingJudges}}</p>
+                <p class="text-sm text-gray-600 mt-1">teams this round</p>
+            </div>
+        </div>
 
         <!-- My Current Assignments -->
         {{#if currentAssignments.length}}
@@ -133,7 +155,7 @@
                         <div class="space-y-3">
                             {{#each currentAssignments}}
                             <div class="bg-white rounded-lg p-4 border border-yellow-300">
-                                <div class="flex items-center justify-between">
+                                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                         <div class="font-semibold text-gray-900">{{this.team_name}}</div>
                                         <div class="text-sm text-gray-600">Table {{this.table_name}} 
@@ -141,14 +163,25 @@
                                         </div>
                                         <div class="text-xs text-gray-500 mt-1">Assigned: {{this.locked_at}}</div>
                                     </div>
-                                    <a href="/scores/enter/{{encodeURIComponent this.team_name}}?round={{this.round}}"
-                                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium text-sm transition">
-                                        Continue Judging
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                        </svg>
-                                    </a>
+                                    <div class="flex flex-col gap-3 w-full sm:w-auto sm:items-end">
+                                        <a href="/scores/enter/{{encodeURIComponent this.team_name}}?round={{this.round}}"
+                                            class="inline-flex items-center justify-center gap-2 min-h-[48px] w-full sm:w-auto px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium text-sm transition">
+                                            Continue Judging
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                            </svg>
+                                        </a>
+                                        <form method="POST" action="/scores/skip" class="w-full sm:w-auto">
+                                            <input type="hidden" name="teamName" value="{{this.team_name}}">
+                                            <input type="hidden" name="round" value="{{this.round}}">
+                                            <p class="text-xs text-gray-600 mb-2 sm:text-right">You will not judge this team again this round.</p>
+                                            <button type="submit"
+                                                class="min-h-[48px] w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-medium text-sm transition">
+                                                Skip this team
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
                             </div>
                             {{/each}}
@@ -172,7 +205,7 @@
                     You'll never be assigned to a team you've already judged.
                 </p>
                 <a href="/scores/next-team"
-                    class="inline-flex items-center gap-3 px-8 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition {{#if currentAssignments.length}}opacity-50 cursor-not-allowed{{/if}}"
+                    class="inline-flex items-center justify-center gap-3 min-h-[48px] w-full sm:w-auto px-8 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition {{#if currentAssignments.length}}opacity-50 cursor-not-allowed{{/if}}"
                     {{#if currentAssignments.length}}onclick="return false;" title="Please complete your current assignments first"{{/if}}>
                     Get Next Team
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,8 +222,38 @@
         <!-- Queue Status -->
         <div class="mb-12">
             <h2 class="text-2xl font-bold text-gray-900 mb-6">Queue Status</h2>
-            <p class="text-sm text-gray-600 mb-4">Click on a team row to assign yourself to judge it (if available).</p>
-            <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <p class="text-sm text-gray-600 mb-4">Tap a team to assign yourself to judge it (if available).</p>
+            <div class="sm:hidden space-y-3">
+                {{#each queueStats}}
+                <div class="rounded-lg border border-gray-200 p-4 {{#if this.canSelfAssign}}bg-white{{else}}bg-gray-50{{/if}}">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="text-lg font-semibold {{#if this.canSelfAssign}}text-gray-900{{else}}text-gray-500{{/if}}">{{this.team_name}}</p>
+                            <p class="text-sm text-gray-600 mt-1">Table {{this.table_name}}{{#if this.division}} · {{this.division}}{{/if}}</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center min-w-[2rem] h-8 px-2 rounded-full text-sm font-semibold
+                            {{#if (eq this.judge_count 0)}}bg-red-100 text-red-800
+                            {{else if (lt this.judge_count ../requiredJudgesPerTeam)}}bg-orange-100 text-orange-800
+                            {{else}}bg-green-100 text-green-800{{/if}}">
+                            {{this.judge_count}}
+                        </span>
+                    </div>
+                    <p class="text-sm font-medium mt-3">
+                        {{#if this.isAbsent}}Absent
+                        {{else if (eq this.judge_count 0)}}Needs judges
+                        {{else if (lt this.judge_count ../requiredJudgesPerTeam)}}Needs {{subtract ../requiredJudgesPerTeam this.judge_count}} more
+                        {{else}}Complete{{/if}}
+                    </p>
+                    {{#if this.canSelfAssign}}
+                    <a href="/scores/assign-team/{{encodeURIComponent this.team_name}}"
+                        class="mt-4 flex items-center justify-center min-h-[48px] w-full rounded-lg bg-gray-900 text-white font-semibold">
+                        Judge this team
+                    </a>
+                    {{/if}}
+                </div>
+                {{/each}}
+            </div>
+            <div class="hidden sm:block border border-gray-200 rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead class="bg-gray-50 border-b border-gray-200">
@@ -290,69 +353,69 @@
     </div>
 
     <!-- Table Map Modal -->
-    <div id="table-map-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-        onclick="if(event.target === this) document.getElementById('table-map-modal').classList.add('hidden')">
-        <div class="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+    <div id="table-map-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-stretch sm:items-center justify-center sm:p-4"
+        onclick="if(event.target === this) closeTableMap()">
+        <div class="bg-white w-full h-full sm:h-auto sm:rounded-lg sm:max-w-6xl sm:max-h-[90vh] overflow-y-auto"
             onclick="event.stopPropagation()">
-            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between z-10">
                 <h2 class="text-2xl font-bold text-gray-900">Event Floor Map</h2>
-                <button onclick="document.getElementById('table-map-modal').classList.add('hidden')"
-                    class="text-gray-400 hover:text-gray-600 transition">
+                <button type="button" onclick="closeTableMap()"
+                    class="min-h-[48px] min-w-[48px] inline-flex items-center justify-center text-gray-700 hover:text-gray-900 transition" aria-label="Close map">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
-            <div class="p-6" id="table-map-content">
+            <div class="p-4 sm:p-6 overflow-x-auto" id="table-map-content">
                 <div class="text-center text-gray-500">Loading table map...</div>
             </div>
         </div>
     </div>
 
     <script>
-        // Load table map when modal is opened
+        function closeTableMap() {
+            document.getElementById('table-map-modal').classList.add('hidden');
+            if (location.hash === '#map') {
+                history.replaceState(null, '', location.pathname + location.search);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const modal = document.getElementById('table-map-modal');
             const content = document.getElementById('table-map-content');
             let loaded = false;
 
-            // Function to load table map
             function loadTableMap() {
-                if (!loaded) {
-                    fetch('/scores/table-map')
-                        .then(response => response.text())
-                        .then(html => {
-                            content.innerHTML = html;
-                            loaded = true;
-                        })
-                        .catch(error => {
-                            content.innerHTML = '<div class="text-center text-red-500 p-4">Error loading table map. Please try again.</div>';
-                        });
-                }
+                if (loaded) return;
+                fetch('/scores/table-map')
+                    .then(response => response.text())
+                    .then(html => {
+                        content.innerHTML = html;
+                        loaded = true;
+                    })
+                    .catch(function () {
+                        content.innerHTML = '<div class="text-center text-red-500 p-4">Error loading table map. Please try again.</div>';
+                    });
             }
 
-            // Watch for modal visibility changes
-            const observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                        if (!modal.classList.contains('hidden')) {
-                            loadTableMap();
-                        }
-                    }
-                });
-            });
+            function openTableMap() {
+                modal.classList.remove('hidden');
+                loadTableMap();
+            }
 
-            observer.observe(modal, {
-                attributes: true,
-                attributeFilter: ['class']
-            });
+            const openButton = document.getElementById('open-table-map');
+            if (openButton) {
+                openButton.addEventListener('click', openTableMap);
+            }
 
-            // Also load on button click (in case observer doesn't fire)
-            document.querySelectorAll('button[onclick*="table-map-modal"]').forEach(button => {
-                button.addEventListener('click', function() {
-                    setTimeout(loadTableMap, 100);
-                });
+            if (location.hash === '#map') {
+                openTableMap();
+            }
+
+            window.addEventListener('hashchange', function () {
+                if (location.hash === '#map') openTableMap();
             });
         });
     </script>
+    {{> judge-bottom-nav active="queue"}}
 </div>

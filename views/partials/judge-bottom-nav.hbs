@@ -1,0 +1,27 @@
+<nav class="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 bg-white" style="padding-bottom: env(safe-area-inset-bottom);" aria-label="Judge">
+    <div class="grid grid-cols-3">
+        <a href="/scores/judge-queue" data-judge-nav="queue"
+            class="flex items-center justify-center min-h-[56px] text-base font-semibold {{#if (eq active 'queue')}}bg-gray-900 text-white{{else}}text-gray-900{{/if}}">
+            Queue
+        </a>
+        <a href="/scores/judge-queue#map" data-judge-nav="map"
+            class="flex items-center justify-center min-h-[56px] text-base font-semibold border-l border-gray-200 {{#if (eq active 'map')}}bg-gray-900 text-white{{else}}text-gray-900{{/if}}">
+            Map
+        </a>
+        <a href="/scores/my-scores" data-judge-nav="scores"
+            class="flex items-center justify-center min-h-[56px] text-base font-semibold border-l border-gray-200 {{#if (eq active 'scores')}}bg-gray-900 text-white{{else}}text-gray-900{{/if}}">
+            Scores
+        </a>
+    </div>
+</nav>
+<script>
+    (function () {
+        if (location.pathname.indexOf('/scores/judge-queue') === -1 || location.hash !== '#map') return;
+        document.querySelectorAll('[data-judge-nav]').forEach(function (link) {
+            var on = link.getAttribute('data-judge-nav') === 'map';
+            link.classList.toggle('bg-gray-900', on);
+            link.classList.toggle('text-white', on);
+            link.classList.toggle('text-gray-900', !on);
+        });
+    })();
+</script>

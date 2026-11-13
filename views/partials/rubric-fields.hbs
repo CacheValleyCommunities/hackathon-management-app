@@ -1,0 +1,31 @@
+<div data-rubric data-max="{{rubricMax}}" class="space-y-6">
+    <p class="text-sm text-gray-600">Score each area from 1 to 5. The total is the sum of those four scores.</p>
+    {{#each rubric}}
+    <fieldset class="border border-gray-200 rounded-lg p-4 sm:p-6">
+        <legend class="px-1 text-sm font-semibold text-gray-900">{{label}}</legend>
+        <div class="grid grid-cols-5 gap-2 mt-4" role="radiogroup" aria-label="{{label}}">
+            {{#each levels}}
+            <label class="block cursor-pointer">
+                <input type="radio"
+                       class="sr-only peer"
+                       name="{{../key}}"
+                       value="{{value}}"
+                       data-rubric-choice
+                       data-label="{{../label}}"
+                       data-anchor="{{anchor}}"
+                       {{#if selected}}checked{{/if}}>
+                <span class="flex items-center justify-center min-h-[48px] rounded-lg border-2 border-gray-300 text-lg font-bold text-gray-900 peer-checked:bg-gray-900 peer-checked:border-gray-900 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-gray-900">{{value}}</span>
+            </label>
+            {{/each}}
+        </div>
+        <p class="mt-4 text-sm text-gray-600" data-rubric-anchor data-for="{{key}}">{{selectedAnchor}}</p>
+    </fieldset>
+    {{/each}}
+    <div class="flex items-baseline justify-between border border-gray-200 rounded-lg px-4 py-4">
+        <span class="text-sm font-semibold text-gray-700">Total</span>
+        <span class="text-3xl font-bold text-gray-900">
+            <span data-rubric-total>0</span><span class="text-lg font-semibold text-gray-500"> / {{rubricMax}}</span>
+        </span>
+    </div>
+    <p data-rubric-message class="text-lg text-red-800" hidden></p>
+</div>

@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const db = require('../db/database');
+const { RUBRIC_MAX } = require('../lib/rubric');
 const { requireParticipant, requireSelectedEvent } = require('../middleware/rbac');
 const { checkAndReturnError } = require('../middleware/validation');
 
@@ -640,7 +641,8 @@ router.get('/scores', requireParticipant, async (req, res) => {
       currentRound: round,
       teamRank,
       divisionResults,
-      teamDivision
+      teamDivision,
+      rubricMax: RUBRIC_MAX
     });
   } catch (error) {
     console.error('Live scores error:', error);

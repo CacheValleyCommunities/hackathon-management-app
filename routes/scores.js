@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db/database');
 const { requireJudge, requireSelectedEvent } = require('../middleware/rbac');
 const { checkAndReturnError } = require('../middleware/validation');
-const { formatScore, parseScoreInput } = require('../lib/score-input');
+const { parseRubricInput, rubricFields, RUBRIC_MAX } = require('../lib/rubric');
 
 const scoreEligibilityMessage = (reason) => {
   if (reason === 'team_full') {
@@ -100,6 +100,9 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
     // Get teams this judge has judged
     const judgedTeams = await db.getJudgedTeamsByJudge(req.eventId, judgeEmail);
     const judgedTeamNames = new Set(judgedTeams.map(t => t.team_name));
+    const skippedTeams = await db.getSkippedTeamsByJudge(req.eventId, judgeEmail, round);
+    const skippedTeamNames = new Set(skippedTeams.map(t => t.team_name));
+    const myRoundScores = await db.getJudgeScores(req.eventId, judgeEmail, round);
     
     // Get current incomplete assignments (locked but not completed)
     const currentAssignments = await db.getCurrentAssignmentsForJudge(req.eventId, judgeEmail, round);
@@ -120,6 +123,7 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
       const canSelfAssign = !judgingLocked &&
         !isAbsent &&
         !judgedTeamNames.has(team.team_name) &&  // Never judged
+        !skippedTeamNames.has(team.team_name) &&  // Skipped this round
         !currentAssignmentTeamNames.has(team.team_name) &&  // Not currently assigned
         team.judge_count < requiredJudgesPerTeam &&  // Needs more judges
         !isLocked;  // Not locked by another judge
@@ -134,43 +138,21 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
     // Calculate summary stats
     const totalTeams = queueStats.length;
     const teamsNeedingJudges = queueStatsWithSelfAssign.filter(t => !t.isAbsent && t.judge_count < requiredJudgesPerTeam).length;
-    const myTeamCount = judgedTeams.length;
-    const teamsYouCanPick = queueStatsWithSelfAssign.filter(t => t.canSelfAssign);
-    const assignmentTables = currentAssignments.map(assignment => assignment.table_name);
-
-    const scores = await db.getJudgeScores(req.eventId, judgeEmail);
-    const lockedRounds = JSON.parse(eventSettings.locked_rounds || '[]');
-    const scoresByRound = {};
-    scores.forEach(score => {
-      if (!scoresByRound[score.round]) {
-        scoresByRound[score.round] = [];
-      }
-      scoresByRound[score.round].push(score);
-    });
-
-    const { gridRows, mapTables } = await buildTableGrid(req.eventId, req.session.user.role);
+    const judgedThisRound = myRoundScores.length;
 
     res.render('scores/judge-queue', {
       title: 'Judge Queue',
-      judgeShell: true,
       round,
       queueStats: queueStatsWithSelfAssign,
-      teamsYouCanPick,
       judgedTeams,
       currentAssignments,
-      assignmentTables,
       totalTeams,
       teamsNeedingJudges,
-      myTeamCount,
+      judgedThisRound,
       requiredJudgesPerTeam,
       eventSettings,
       judgingLocked,
-      query: req.query,
-      scores,
-      scoresByRound,
-      lockedRounds,
-      gridRows,
-      mapTables
+      query: req.query
     });
   } catch (error) {
     console.error('Error loading judge queue:', error);
@@ -346,6 +328,9 @@ router.get('/assign-team/:teamName', requireJudge, async (req, res) => {
       if (lockResult.reason === 'team_absent') {
         return res.redirect('/scores/judge-queue?error=team_absent');
       }
+      if (lockResult.reason === 'skipped') {
+        return res.redirect('/scores/judge-queue?error=team_skipped');
+      }
       return res.redirect('/scores/judge-queue?error=assignment_failed');
     }
     
@@ -470,13 +455,12 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
 
     res.render('scores/enter', {
       title: `Score Entry - ${teamName}`,
-      judgeShell: true,
       teamName,
       tableName,
       round,
       existingScore,
-      scoreValue: existingScore ? formatScore(existingScore.score) : '',
-      maxScore: eventSettings.max_score,
+      rubric: rubricFields(existingScore && existingScore.criteria),
+      rubricMax: RUBRIC_MAX,
       isEdit: !!existingScore,
       query: req.query
     });
@@ -495,6 +479,16 @@ const absenceFailureMessage = (reason) => {
   }
   if (reason === 'already_absent') {
     return 'You already marked this team absent.';
+  }
+  return 'This team is not assigned to you. Use the judge queue to get a team.';
+};
+
+const skipFailureMessage = (reason) => {
+  if (reason === 'already_scored') {
+    return 'You already scored this team.';
+  }
+  if (reason === 'already_skipped') {
+    return 'You already skipped this team.';
   }
   return 'This team is not assigned to you. Use the judge queue to get a team.';
 };
@@ -540,6 +534,47 @@ router.post('/mark-absent', requireJudge, async (req, res) => {
   }
 });
 
+// POST skip the assigned team for this judge and this round
+router.post('/skip', requireJudge, async (req, res) => {
+  try {
+    const eventSettings = await db.getEventSettings(req.eventId);
+    if (eventSettings.judging_locked) {
+      return res.redirect('/scores/judge-queue?error=judging_locked');
+    }
+
+    const teamName = req.body.teamName;
+    const roundNum = parseInt(req.body.round, 10) || 1;
+    if (!teamName) {
+      return res.redirect('/scores/judge-queue?error=team_not_found');
+    }
+
+    const isLocked = await db.isRoundLocked(req.eventId, roundNum);
+    if (isLocked) {
+      return res.render('error', {
+        message: `Round ${roundNum} has been locked. Scores can no longer be entered or edited for this round.`
+      });
+    }
+
+    const result = await db.skipTeamForJudge(req.eventId, req.session.user.email, teamName, roundNum);
+    if (!result.ok) {
+      return res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?round=${roundNum}&auto=${req.body.auto || ''}&error=${encodeURIComponent(skipFailureMessage(result.reason))}`);
+    }
+
+    const autoValue = req.body.auto;
+    const wasAutoAssigned = autoValue === '1' || autoValue === 1 || autoValue === true || autoValue === 'true';
+    if (wasAutoAssigned) {
+      return res.redirect('/scores/next-team');
+    }
+    return res.redirect('/scores/judge-queue?message=team_skipped');
+  } catch (error) {
+    console.error('Error skipping team:', error);
+    res.render('error', {
+      message: 'Failed to skip the team. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error : {}
+    });
+  }
+});
+
 // POST submit score (judges and admins only)
 router.post('/submit', requireJudge, async (req, res) => {
   try {
@@ -552,12 +587,12 @@ router.post('/submit', requireJudge, async (req, res) => {
       });
     }
 
-    const { teamName, tableName, round, score, notes } = req.body;
+    const { teamName, tableName, round, notes } = req.body;
     const judgeEmail = req.session.user.email;
     const roundNum = parseInt(round) || 1;
     const autoValue = req.body.auto || req.query.auto;
     const wasAutoAssigned = autoValue === '1' || autoValue === 1 || autoValue === true || autoValue === 'true';
-    const parsedScore = parseScoreInput(score, eventSettings.max_score);
+    const parsedScore = parseRubricInput(req.body);
 
     if (!teamName || !tableName || !parsedScore.ok) {
       if (teamName) {
@@ -572,7 +607,7 @@ router.post('/submit', requireJudge, async (req, res) => {
         message: 'Invalid score data. Please try again.'
       });
     }
-    const scoreNum = parsedScore.value;
+    const scoreNum = parsedScore.total;
 
     // Check if round is locked
     const isLocked = await db.isRoundLocked(req.eventId, roundNum);
@@ -601,7 +636,7 @@ router.post('/submit', requireJudge, async (req, res) => {
     }
 
     // Save to local database
-    await db.saveScore(req.eventId, judgeEmail, teamName, tableName, roundNum, scoreNum, notes || '');
+    await db.saveScore(req.eventId, judgeEmail, teamName, tableName, roundNum, scoreNum, notes || '', parsedScore.values);
 
     // Mark team assignment as completed
     await db.markAssignmentCompleted(req.eventId, judgeEmail, teamName, roundNum);
@@ -621,7 +656,7 @@ router.post('/submit', requireJudge, async (req, res) => {
       res.redirect(`/scores/next-team`);
     } else {
       // Redirect back to select-team page with success message
-      res.redirect(`/scores/judge-queue?message=score_saved#scores`);
+      res.redirect(`/scores/select-team?round=${roundNum}&success=1`);
     }
   } catch (error) {
     console.error('Error submitting score:', error);
@@ -655,6 +690,7 @@ router.get('/my-scores', requireJudge, async (req, res) => {
       scores,
       scoresByRound,
       lockedRounds,
+      rubricMax: RUBRIC_MAX,
       query: req.query
     });
   } catch (error) {

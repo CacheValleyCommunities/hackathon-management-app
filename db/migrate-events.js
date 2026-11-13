@@ -61,6 +61,7 @@ const ensureDefaultEvent = async (db) => {
   await addColumn(db, 'event_settings', 'event_dates_text', 'TEXT');
   await addColumn(db, 'event_settings', 'judging_locked', 'INTEGER DEFAULT 0');
   await addColumn(db, 'event_settings', 'max_score', 'REAL DEFAULT 100');
+  await addColumn(db, 'event_settings', 'judging_seconds', 'INTEGER DEFAULT 180');
   await addColumn(db, 'event_settings', 'winners', "TEXT DEFAULT '{}'");
 
   let event = await getSql(db, 'SELECT * FROM event_settings ORDER BY id ASC LIMIT 1');
@@ -309,6 +310,7 @@ const ensureIndexes = async (db) => {
     'CREATE INDEX IF NOT EXISTS idx_scores_judge ON scores(event_id, judge_email)',
     'CREATE INDEX IF NOT EXISTS idx_scores_team ON scores(event_id, team_name, round)',
     'CREATE INDEX IF NOT EXISTS idx_scores_table ON scores(event_id, table_name, round)',
+    'CREATE INDEX IF NOT EXISTS idx_score_criteria_score ON score_criteria(score_id)',
     'CREATE INDEX IF NOT EXISTS idx_teams_table ON teams(event_id, table_name)',
     'CREATE INDEX IF NOT EXISTS idx_teams_owner ON teams(event_id, owner_user_id)',
     'CREATE INDEX IF NOT EXISTS idx_memberships_user ON event_memberships(user_id, event_id)',
@@ -379,6 +381,17 @@ const migrateEvents = async (db) => {
     `UPDATE teams
      SET owner_user_id = (SELECT u.id FROM users u WHERE u.team_id = teams.id LIMIT 1)
      WHERE owner_user_id IS NULL`
+  );
+
+  await runSql(
+    db,
+    `CREATE TABLE IF NOT EXISTS score_criteria (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      score_id INTEGER NOT NULL,
+      criterion TEXT NOT NULL,
+      value INTEGER NOT NULL CHECK (value >= 1 AND value <= 5),
+      UNIQUE(score_id, criterion)
+    )`
   );
 
   await ensureIndexes(db);

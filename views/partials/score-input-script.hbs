@@ -61,12 +61,14 @@
                 var form = document.getElementById('score-form');
                 var title = document.getElementById('judge-score-title');
                 var absent = document.getElementById('absent-below-score');
+                var skip = document.getElementById('skip-below-score');
                 if (confirmPanel) confirmPanel.hidden = true;
                 if (form) form.hidden = false;
                 if (absent) absent.hidden = false;
+                if (skip) skip.hidden = false;
                 if (title) title.textContent = 'Score';
                 window.scrollTo(0, 0);
-                var score = document.getElementById('score-mobile');
+                var score = document.getElementById('score');
                 if (score) score.focus();
             });
         }

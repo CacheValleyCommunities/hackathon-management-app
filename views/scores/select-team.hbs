@@ -1,13 +1,13 @@
-<div class="min-h-screen bg-white">
+<div class="min-h-screen bg-white pb-24 lg:pb-8">
     <!-- Header -->
     <div class="bg-white border-b border-gray-200 sticky top-0 z-10 backdrop-blur-sm bg-white/95">
         <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Score Teams</h1>
                     <p class="text-sm text-gray-500 mt-2">Round {{round}} • Edit a score you already entered. New scores come from the queue.</p>
                 </div>
-                <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                <a href="/" class="min-h-[48px] inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
                     ← Back to Home
                 </a>
             </div>
@@ -144,22 +144,22 @@
                     <!-- Action Button -->
                     {{#if ../../../isRoundLocked}}
                     <button disabled
-                        class="block w-full text-center px-4 py-3 bg-gray-200 text-gray-500 rounded-lg cursor-not-allowed font-medium">
+                        class="block w-full min-h-[48px] text-center px-4 py-3 bg-gray-200 text-gray-500 rounded-lg cursor-not-allowed font-medium">
                         🔒 Locked
                     </button>
                     {{else if (contains ../../scoredTeams this.name)}}
                     <a href="/scores/enter/{{encodeURIComponent this.name}}?round={{../../../round}}"
-                        class="block w-full text-center px-4 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
+                        class="flex items-center justify-center w-full min-h-[48px] text-center px-4 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
                         Edit Score
                     </a>
                     {{else if (contains ../../assignedTeams this.name)}}
                     <a href="/scores/enter/{{encodeURIComponent this.name}}?round={{../../../round}}"
-                        class="block w-full text-center px-4 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
+                        class="flex items-center justify-center w-full min-h-[48px] text-center px-4 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition font-semibold">
                         Continue Score
                     </a>
                     {{else}}
                     <a href="/scores/judge-queue"
-                        class="block w-full text-center px-4 py-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-900 rounded-lg transition font-semibold">
+                        class="flex items-center justify-center w-full min-h-[48px] text-center px-4 py-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-900 rounded-lg transition font-semibold">
                         Score from the queue
                     </a>
                     {{/if}}
@@ -230,4 +230,5 @@
         </div>
         {{/if}}
     </div>
+    {{> judge-bottom-nav}}
 </div>

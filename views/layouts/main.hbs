@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0{{#if judgeShell}}, viewport-fit=cover{{/if}}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{title}} - {{#if eventSettings.event_name}}{{eventSettings.event_name}}{{else}}Hackathon Judging{{/if}}
     </title>
     {{> meta-tags}}
@@ -52,19 +52,10 @@
             opacity: 1;
             visibility: visible;
         }
-
-        @media (max-width: 1023px) {
-            body.judge-shell > div > header,
-            body.judge-shell > div > footer,
-            body.judge-shell #mobile-menu,
-            body.judge-shell #mobile-menu-overlay {
-                display: none !important;
-            }
-        }
     </style>
 </head>
 
-<body class="bg-gray-50 min-h-screen{{#if judgeShell}} judge-shell{{/if}}">
+<body class="bg-gray-50 min-h-screen">
     <div class="min-h-screen bg-white max-w-[1920px] mx-auto shadow-2xl">
         <header class="bg-white border-b border-gray-200 sticky top-0 z-50 backdrop-blur-sm bg-white/95">
             <div class="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">

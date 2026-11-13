@@ -1,122 +1,7 @@
-<div id="judge-score" class="lg:hidden bg-white text-gray-900" style="padding-bottom: calc(11rem + env(safe-area-inset-bottom));">
-    <div class="sticky top-0 z-30 bg-white border-b-2 border-black px-4 pt-4 pb-3">
-        <div class="flex items-end justify-between gap-4">
-            <div>
-                <p class="text-lg font-semibold">Round {{round}}</p>
-                <h1 id="judge-score-title" class="text-4xl font-bold leading-none mt-1">{{#if (or isEdit (lookup query 'error'))}}Score{{else}}This team{{/if}}</h1>
-            </div>
-            <a href="{{#if isEdit}}/scores/judge-queue#scores{{else}}/scores/judge-queue#queue{{/if}}"
-                class="inline-flex items-center justify-center min-h-[52px] px-2 text-xl font-bold underline">Back</a>
-        </div>
-    </div>
-
-    <div class="px-4 py-6">
-        {{#if (lookup query 'error')}}
-        <div class="mb-6 rounded-2xl bg-red-100 border-2 border-red-800 p-5">
-            <p class="text-xl text-red-950">{{lookup query 'error'}}</p>
-        </div>
-        {{/if}}
-
-        <div id="team-confirm" {{#if (or isEdit (lookup query 'error'))}}hidden{{/if}}>
-            <p class="text-xl leading-snug">Look at the table. Is this the team in front of you?</p>
-            <p class="text-5xl font-bold leading-tight mt-6">{{teamName}}</p>
-            <p class="text-3xl mt-3">Table {{tableName}}</p>
-            <button type="button" id="confirm-team-button"
-                class="mt-8 w-full min-h-[88px] rounded-2xl bg-gray-900 text-white text-3xl font-bold px-6">
-                Yes, this is the team
-            </button>
-            <form method="POST" action="/scores/mark-absent" class="mt-4">
-                <input type="hidden" name="teamName" value="{{teamName}}">
-                <input type="hidden" name="round" value="{{round}}">
-                {{#if (eq (lookup query 'auto') '1')}}
-                <input type="hidden" name="auto" value="1">
-                {{/if}}
-                <button type="submit"
-                    class="w-full min-h-[72px] rounded-2xl border-2 border-gray-900 text-2xl font-bold">
-                    I can't find this team
-                </button>
-            </form>
-        </div>
-
-        <form method="POST" action="/scores/submit" id="score-form" {{#unless (or isEdit (lookup query 'error'))}}hidden{{/unless}}>
-            <input type="hidden" name="teamName" value="{{teamName}}">
-            <input type="hidden" name="round" value="{{round}}">
-            <input type="hidden" name="tableName" value="{{tableName}}">
-            {{#if (eq (lookup query 'auto') '1')}}
-            <input type="hidden" name="auto" value="1">
-            {{/if}}
-
-            <p class="text-5xl font-bold leading-tight">{{teamName}}</p>
-            <p class="text-3xl mt-2">Table {{tableName}}</p>
-            <p class="text-xl mt-4">The highest score is {{maxScore}}.</p>
-
-            <label for="score-mobile" class="block text-2xl font-bold mt-8 mb-3">Score</label>
-            <p class="text-xl mb-3">Type a number, like 8 or 8.5.</p>
-            <input id="score-mobile" name="score" type="text" inputmode="decimal" autocomplete="off"
-                data-score-field data-max="{{maxScore}}"
-                value="{{scoreValue}}"
-                class="w-full min-h-[120px] px-4 text-center text-7xl font-bold border-4 border-gray-900 rounded-2xl">
-            <p data-score-message class="mt-3 text-xl text-red-800" hidden></p>
-
-            <label for="notes-mobile" class="block text-2xl font-bold mt-8 mb-3">Notes, if you want</label>
-            <textarea id="notes-mobile" name="notes" rows="3"
-                class="w-full px-4 py-4 text-xl border-2 border-gray-900 rounded-2xl"
-                placeholder="A short note">{{#if existingScore}}{{existingScore.notes}}{{/if}}</textarea>
-
-            <div class="fixed inset-x-0 z-30 px-4 lg:hidden" style="bottom: calc(5rem + env(safe-area-inset-bottom));">
-                <button type="submit"
-                    class="w-full min-h-[72px] rounded-2xl bg-gray-900 text-white text-2xl font-bold shadow-lg">
-                    {{#if isEdit}}Update this score{{else}}Save this score{{/if}}
-                </button>
-            </div>
-        </form>
-
-        {{#unless isEdit}}
-        <form method="POST" action="/scores/mark-absent" id="absent-below-score" class="mt-4" {{#unless (lookup query 'error')}}hidden{{/unless}}>
-            <input type="hidden" name="teamName" value="{{teamName}}">
-            <input type="hidden" name="round" value="{{round}}">
-            {{#if (eq (lookup query 'auto') '1')}}
-            <input type="hidden" name="auto" value="1">
-            {{/if}}
-            <button type="submit" class="w-full min-h-[64px] rounded-2xl border-2 border-gray-900 text-xl font-bold">
-                I can't find this team
-            </button>
-        </form>
-        {{/unless}}
-    </div>
-
-    <nav class="fixed bottom-0 inset-x-0 z-40 bg-white border-t-2 border-black lg:hidden"
-        style="padding-bottom: env(safe-area-inset-bottom);" aria-label="Judge sections">
-        <div class="grid grid-cols-3">
-            <a href="/scores/judge-queue#queue"
-                class="flex flex-col items-center justify-center gap-1 min-h-[80px] text-xl font-bold bg-white text-gray-900">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10" />
-                </svg>
-                Queue
-            </a>
-            <a href="/scores/judge-queue#map"
-                class="flex flex-col items-center justify-center gap-1 min-h-[80px] text-xl font-bold bg-white text-gray-900 border-l-2 border-black">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
-                Map
-            </a>
-            <a href="/scores/judge-queue#scores"
-                class="flex flex-col items-center justify-center gap-1 min-h-[80px] text-xl font-bold bg-white text-gray-900 border-l-2 border-black">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.075 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                </svg>
-                Scores
-            </a>
-        </div>
-    </nav>
-</div>
-
-<div class="hidden lg:block min-h-screen bg-white">
-    <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+<div class="min-h-screen bg-white pb-24 lg:pb-8">
+    <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         <div class="mb-8">
-            <a href="{{#if (eq (lookup query 'auto') '1')}}/scores/judge-queue{{else}}/scores/select-team?round={{round}}{{/if}}" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition">
+            <a href="{{#if (eq (lookup query 'auto') '1')}}/scores/judge-queue{{else}}/scores/select-team?round={{round}}{{/if}}" class="inline-flex items-center min-h-[48px] gap-2 text-sm text-gray-600 hover:text-gray-900 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                 </svg>
@@ -125,14 +10,14 @@
         </div>
 
         <div class="mb-8">
-            <div class="flex items-start justify-between mb-4">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4">
                 <div>
                     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-2">
                         {{#if isEdit}}Edit{{else}}Enter{{/if}} Score
                     </h1>
                     <p class="text-lg text-gray-600">{{teamName}}</p>
                 </div>
-                <div class="text-right">
+                <div class="sm:text-right">
                     <div class="text-xs text-gray-500 mb-1">Round</div>
                     <div class="text-3xl font-bold text-gray-900">{{round}}</div>
                 </div>
@@ -146,10 +31,10 @@
         {{/if}}
 
         {{#unless isEdit}}
-        <div id="team-confirm-desktop" class="mb-8 border border-gray-200 rounded-lg p-6" {{#if (lookup query 'error')}}hidden{{/if}}>
+        <div id="team-confirm" class="mb-8 border border-gray-200 rounded-lg p-6" {{#if (lookup query 'error')}}hidden{{/if}}>
             <h2 class="text-xl font-bold text-gray-900 mb-2">Confirm this team</h2>
             <p class="text-gray-600 mb-6">Check the team name and table before you start scoring.</p>
-            <div class="grid grid-cols-2 gap-6 mb-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
                 <div>
                     <div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Team</div>
                     <div class="text-lg font-semibold text-gray-900">{{teamName}}</div>
@@ -159,8 +44,8 @@
                     <div class="text-lg font-semibold text-gray-900">{{tableName}}</div>
                 </div>
             </div>
-            <button type="button" id="confirm-team-desktop"
-                class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition">
+            <button type="button" id="confirm-team-button"
+                class="w-full min-h-[48px] px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition">
                 I'm with this team
             </button>
             <form method="POST" action="/scores/mark-absent" class="mt-3">
@@ -170,14 +55,26 @@
                 <input type="hidden" name="auto" value="1">
                 {{/if}}
                 <button type="submit"
-                    class="w-full px-6 py-3 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-semibold transition">
+                    class="w-full min-h-[48px] px-6 py-3 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-semibold transition">
                     Can't find this team
+                </button>
+            </form>
+            <form method="POST" action="/scores/skip" class="mt-3">
+                <input type="hidden" name="teamName" value="{{teamName}}">
+                <input type="hidden" name="round" value="{{round}}">
+                {{#if (eq (lookup query 'auto') '1')}}
+                <input type="hidden" name="auto" value="1">
+                {{/if}}
+                <p class="text-sm text-gray-600 mb-3 text-center">You will not judge this team again this round.</p>
+                <button type="submit"
+                    class="w-full min-h-[48px] px-6 py-3 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-semibold transition">
+                    Skip this team
                 </button>
             </form>
         </div>
         {{/unless}}
 
-        <form method="POST" action="/scores/submit" id="score-form-desktop" class="space-y-8" {{#unless (or isEdit (lookup query 'error'))}}hidden{{/unless}}>
+        <form method="POST" action="/scores/submit" id="score-form" class="space-y-8" {{#unless (or isEdit (lookup query 'error'))}}hidden{{/unless}}>
             <input type="hidden" name="teamName" value="{{teamName}}">
             <input type="hidden" name="round" value="{{round}}">
             <input type="hidden" name="tableName" value="{{tableName}}">
@@ -186,7 +83,7 @@
             {{/if}}
 
             <div class="border border-gray-200 rounded-lg p-6">
-                <div class="grid grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
                         <div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Team</div>
                         <div class="text-lg font-semibold text-gray-900">{{teamName}}</div>
@@ -198,23 +95,7 @@
                 </div>
             </div>
 
-            <div>
-                <label for="score" class="block text-sm font-semibold text-gray-700 mb-3">
-                    Score <span class="text-red-500">*</span>
-                </label>
-                <p class="text-sm text-gray-600 mb-3">The highest score is {{maxScore}}. Use a number, like 8 or 8.5.</p>
-                <input type="text"
-                       id="score"
-                       name="score"
-                       inputmode="decimal"
-                       autocomplete="off"
-                       data-score-field
-                       data-max="{{maxScore}}"
-                       value="{{scoreValue}}"
-                       {{#if isEdit}}autofocus{{/if}}
-                       class="w-full px-4 py-4 text-3xl font-bold border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
-                <p data-score-message class="mt-3 text-lg text-red-800" hidden></p>
-            </div>
+            {{> rubric-fields}}
 
             <div>
                 <label for="notes" class="block text-sm font-semibold text-gray-700 mb-3">
@@ -228,40 +109,37 @@
             </div>
 
             <button type="submit"
-                    class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition">
+                    class="w-full min-h-[48px] px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold text-lg transition">
                 {{#if isEdit}}Update Score{{else}}Submit Score{{/if}}
             </button>
         </form>
         {{#unless isEdit}}
-        <form method="POST" action="/scores/mark-absent" id="absent-below-score-desktop" class="mt-3" {{#unless (lookup query 'error')}}hidden{{/unless}}>
+        <form method="POST" action="/scores/mark-absent" id="absent-below-score" class="mt-3" {{#unless (lookup query 'error')}}hidden{{/unless}}>
             <input type="hidden" name="teamName" value="{{teamName}}">
             <input type="hidden" name="round" value="{{round}}">
             {{#if (eq (lookup query 'auto') '1')}}
             <input type="hidden" name="auto" value="1">
             {{/if}}
             <button type="submit"
-                class="w-full px-6 py-3 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-semibold transition">
+                class="w-full min-h-[48px] px-6 py-3 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-semibold transition">
                 Can't find this team
+            </button>
+        </form>
+        <form method="POST" action="/scores/skip" id="skip-below-score" class="mt-3" {{#unless (lookup query 'error')}}hidden{{/unless}}>
+            <input type="hidden" name="teamName" value="{{teamName}}">
+            <input type="hidden" name="round" value="{{round}}">
+            {{#if (eq (lookup query 'auto') '1')}}
+            <input type="hidden" name="auto" value="1">
+            {{/if}}
+            <p class="text-sm text-gray-600 mb-3 text-center">You will not judge this team again this round.</p>
+            <button type="submit"
+                class="w-full min-h-[48px] px-6 py-3 border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-lg font-semibold transition">
+                Skip this team
             </button>
         </form>
         {{/unless}}
     </div>
+    {{> judge-bottom-nav}}
 </div>
 
-{{> score-input-script}}
-<script>
-    (function () {
-        var desktopConfirm = document.getElementById('confirm-team-desktop');
-        if (!desktopConfirm) return;
-        desktopConfirm.addEventListener('click', function () {
-            var panel = document.getElementById('team-confirm-desktop');
-            var form = document.getElementById('score-form-desktop');
-            var absent = document.getElementById('absent-below-score-desktop');
-            if (panel) panel.hidden = true;
-            if (form) form.hidden = false;
-            if (absent) absent.hidden = false;
-            var score = document.getElementById('score');
-            if (score) score.focus();
-        });
-    })();
-</script>
+{{> rubric-input-script}}

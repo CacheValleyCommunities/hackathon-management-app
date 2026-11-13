@@ -37,14 +37,7 @@
         </div>
 
         <form method="POST" action="/admin/scores/{{score.id}}/update" class="space-y-8">
-            <div>
-                <label for="score" class="block text-sm font-semibold text-gray-700 mb-3">Score</label>
-                <p class="text-sm text-gray-600 mb-3">The highest score is {{maxScore}}.</p>
-                <input type="text" id="score" name="score" inputmode="decimal" value="{{score.score}}" required
-                    data-score-field data-max="{{maxScore}}"
-                    class="w-full px-4 py-4 text-3xl font-bold border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent">
-                <p data-score-message class="mt-3 text-lg text-red-800" hidden></p>
-            </div>
+            {{> rubric-fields}}
             <div>
                 <label for="notes" class="block text-sm font-semibold text-gray-700 mb-3">Notes</label>
                 <textarea id="notes" name="notes" rows="6"
@@ -57,4 +50,4 @@
         </form>
     </div>
 </div>
-{{> score-input-script}}
+{{> rubric-input-script}}

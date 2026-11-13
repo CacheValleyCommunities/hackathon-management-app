@@ -3,7 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { migrateEvents, slugify } = require('./migrate-events');
-const { resolveMaxScore } = require('../lib/score-input');
+const { resolveMaxScore, resolveJudgingSeconds } = require('../lib/score-input');
+const { CRITERIA, compositeScore, rubricBreakdown } = require('../lib/rubric');
 
 const DB_PATH = process.env.JUDGING_DB_PATH || path.join(__dirname, 'judging.db');
 
@@ -333,6 +334,17 @@ const createTables = () => {
           reject(err);
           return;
         }
+        db.run(`CREATE TABLE IF NOT EXISTS score_criteria (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          score_id INTEGER NOT NULL,
+          criterion TEXT NOT NULL,
+          value INTEGER NOT NULL CHECK (value >= 1 AND value <= 5),
+          UNIQUE(score_id, criterion)
+        )`, (criteriaErr) => {
+          if (criteriaErr) {
+            console.error('Error creating score_criteria table:', criteriaErr);
+          }
+        });
       });
 
       // Judge team assignments (tracks which judges have judged which teams)
@@ -367,6 +379,21 @@ const createTables = () => {
       )`, (err) => {
         if (err) {
           console.error('Error creating team_absences table:', err);
+        }
+      });
+
+      db.run(`CREATE TABLE IF NOT EXISTS judge_team_skips (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        judge_email TEXT NOT NULL,
+        team_name TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, judge_email, team_name, round),
+        FOREIGN KEY (event_id) REFERENCES event_settings(id)
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating judge_team_skips table:', err);
         }
       });
 
@@ -413,6 +440,7 @@ const createTables = () => {
         db.run(`ALTER TABLE event_settings ADD COLUMN event_dates_text TEXT`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN judging_locked INTEGER DEFAULT 0`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN max_score REAL DEFAULT 100`, () => { });
+        db.run(`ALTER TABLE event_settings ADD COLUMN judging_seconds INTEGER DEFAULT 180`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN winners TEXT DEFAULT '{}'`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN slug TEXT`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN status TEXT DEFAULT 'open'`, () => { });
@@ -1215,6 +1243,62 @@ const getAllUsers = (eventId) => {
 };
 
 // Score operations
+const SCORE_UPSERT_SQL = `INSERT INTO scores (event_id, judge_email, team_name, table_name, round, score, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))
+       ON CONFLICT(event_id, judge_email, team_name, round)
+       DO UPDATE SET score = ?, notes = ?, table_name = ?, updated_at = datetime("now")`;
+
+const insertCriteria = (scoreId, criteria, callback) => {
+  const keys = CRITERIA.map((criterion) => criterion.key);
+  const insertAt = (index) => {
+    if (index >= keys.length) {
+      callback(null);
+      return;
+    }
+    const key = keys[index];
+    db.run(
+      'INSERT INTO score_criteria (score_id, criterion, value) VALUES (?, ?, ?)',
+      [scoreId, key, criteria[key]],
+      (err) => {
+        if (err) callback(err);
+        else insertAt(index + 1);
+      }
+    );
+  };
+  insertAt(0);
+};
+
+const attachCriteria = (rows) => {
+  const list = rows || [];
+  if (list.length === 0) return Promise.resolve(list);
+  const ids = list.map((row) => row.id);
+  const placeholders = ids.map(() => '?').join(', ');
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT score_id, criterion, value FROM score_criteria WHERE score_id IN (${placeholders})`,
+      ids,
+      (err, criterionRows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        const byScore = {};
+        (criterionRows || []).forEach((row) => {
+          if (!byScore[row.score_id]) byScore[row.score_id] = {};
+          byScore[row.score_id][row.criterion] = row.value;
+        });
+        list.forEach((score) => {
+          const values = byScore[score.id];
+          const breakdown = rubricBreakdown(values);
+          score.criteria = breakdown.length ? values : null;
+          score.rubricBreakdown = breakdown;
+        });
+        resolve(list);
+      }
+    );
+  });
+};
+
 const getScore = (eventId, judgeEmail, teamName, round) => {
   return new Promise((resolve, reject) => {
     db.get(
@@ -1222,25 +1306,73 @@ const getScore = (eventId, judgeEmail, teamName, round) => {
       [eventId, judgeEmail, teamName, round],
       (err, row) => {
         if (err) reject(err);
-        else resolve(row);
+        else if (!row) resolve(row);
+        else attachCriteria([row]).then((loaded) => resolve(loaded[0])).catch(reject);
       }
     );
   });
 };
 
-const saveScore = (eventId, judgeEmail, teamName, tableName, round, score, notes = null) => {
+const saveScore = (eventId, judgeEmail, teamName, tableName, round, score, notes = null, criteria = null) => {
+  const storedScore = criteria ? compositeScore(criteria) : score;
+  const params = [eventId, judgeEmail, teamName, tableName, round, storedScore, notes, storedScore, notes, tableName];
+
   return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO scores (event_id, judge_email, team_name, table_name, round, score, notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))
-       ON CONFLICT(event_id, judge_email, team_name, round) 
-       DO UPDATE SET score = ?, notes = ?, table_name = ?, updated_at = datetime("now")`,
-      [eventId, judgeEmail, teamName, tableName, round, score, notes, score, notes, tableName],
-      function (err) {
+    if (!criteria) {
+      db.run(SCORE_UPSERT_SQL, params, function (err) {
         if (err) reject(err);
         else resolve({ id: this.lastID });
+      });
+      return;
+    }
+
+    const fail = (err) => {
+      db.run('ROLLBACK', () => reject(err));
+    };
+
+    db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+      if (beginErr) {
+        reject(beginErr);
+        return;
       }
-    );
+
+      db.run(SCORE_UPSERT_SQL, params, (upsertErr) => {
+        if (upsertErr) {
+          fail(upsertErr);
+          return;
+        }
+
+        db.get(
+          'SELECT id FROM scores WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?',
+          [eventId, judgeEmail, teamName, round],
+          (lookupErr, row) => {
+            if (lookupErr || !row) {
+              fail(lookupErr || new Error('Score was not saved.'));
+              return;
+            }
+
+            db.run('DELETE FROM score_criteria WHERE score_id = ?', [row.id], (deleteErr) => {
+              if (deleteErr) {
+                fail(deleteErr);
+                return;
+              }
+
+              insertCriteria(row.id, criteria, (insertErr) => {
+                if (insertErr) {
+                  fail(insertErr);
+                  return;
+                }
+
+                db.run('COMMIT', (commitErr) => {
+                  if (commitErr) fail(commitErr);
+                  else resolve({ id: row.id, score: storedScore });
+                });
+              });
+            });
+          }
+        );
+      });
+    });
   });
 };
 
@@ -1273,7 +1405,7 @@ const getJudgeScores = (eventId, judgeEmail = null, round = null, tableName = nu
 
     db.all(query, params, (err, rows) => {
       if (err) reject(err);
-      else resolve(rows);
+      else attachCriteria(rows).then(resolve).catch(reject);
     });
   });
 };
@@ -1385,7 +1517,9 @@ const parseEventRow = (row) => {
     judging_locked: row.judging_locked === 1,
     winners,
     status: row.status || 'open',
-    max_score: resolveMaxScore(row.max_score)
+    max_score: resolveMaxScore(row.max_score),
+    judging_seconds: resolveJudgingSeconds(row.judging_seconds),
+    judging_minutes: resolveJudgingSeconds(row.judging_seconds) / 60
   };
 };
 
@@ -1402,7 +1536,9 @@ const emptyEventSettings = () => ({
   locked_rounds: '[]',
   judging_locked: false,
   winners: {},
-  max_score: 100
+  max_score: 100,
+  judging_seconds: 180,
+  judging_minutes: 3
 });
 
 const getEventById = (eventId) => {
@@ -1539,12 +1675,12 @@ const updateEventSettings = (eventId, settings) => {
       ? JSON.stringify(settings.divisions)
       : (settings.divisions || '[]');
 
-    const applyUpdate = (id, nextSlug, maxScore) => {
+    const applyUpdate = (id, nextSlug, maxScore, judgingSeconds) => {
       db.run(
         `UPDATE event_settings 
          SET event_name = ?, slug = ?, start_date = ?, end_date = ?, divisions = ?, logo_filename = ?, 
              hero_banner_image = ?, hero_banner_link = ?, landing_page_content = ?, event_dates_text = ?,
-             max_score = ?,
+             max_score = ?, judging_seconds = ?,
              updated_at = datetime("now")
          WHERE id = ?`,
         [
@@ -1559,6 +1695,7 @@ const updateEventSettings = (eventId, settings) => {
           settings.landing_page_content || null,
           settings.event_dates_text || null,
           maxScore,
+          judgingSeconds,
           id
         ],
         function (err) {
@@ -1577,13 +1714,18 @@ const updateEventSettings = (eventId, settings) => {
         const maxScore = resolveMaxScore(
           settings.max_score == null || settings.max_score === '' ? current.max_score : settings.max_score
         );
+        const judgingSeconds = resolveJudgingSeconds(
+          settings.judging_seconds == null || settings.judging_seconds === ''
+            ? current.judging_seconds
+            : settings.judging_seconds
+        );
         const keepSlug = current.slug && String(current.slug).trim();
         if (keepSlug) {
-          applyUpdate(eventId, keepSlug, maxScore);
+          applyUpdate(eventId, keepSlug, maxScore, judgingSeconds);
           return;
         }
         return uniqueEventSlug(settings.event_name || current.event_name || 'Hackathon', eventId)
-          .then((nextSlug) => applyUpdate(eventId, nextSlug, maxScore));
+          .then((nextSlug) => applyUpdate(eventId, nextSlug, maxScore, judgingSeconds));
       })
       .catch(reject);
   });
@@ -1824,10 +1966,14 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
               (
                 SELECT COUNT(*) FROM scores
                 WHERE event_id = ? AND team_name = t.name AND round = ?
-              ) as score_count
+              ) as score_count,
+              (
+                SELECT COUNT(*) FROM judge_team_skips
+                WHERE event_id = ? AND team_name = t.name AND round = ? AND judge_email = ?
+              ) as skipped_by_me
              FROM teams t
              WHERE t.event_id = ?`,
-            [eventId, round, eventId, round, eventId, round, judgeEmail, eventId, round, judgeEmail, eventId, round, eventId, round, eventId],
+            [eventId, round, eventId, round, eventId, round, judgeEmail, eventId, round, judgeEmail, eventId, round, eventId, round, eventId, round, judgeEmail, eventId],
             (err, teamCounts) => {
               if (err) {
                 reject(err);
@@ -1839,6 +1985,7 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
               const scoreCountMap = {};
               const alreadyAssignedSet = new Set();
               const lockedTeamsSet = new Set();
+              const skippedByMeSet = new Set();
               teamCounts.forEach(tc => {
                 teamCountMap[tc.team_name] = tc.judge_count;
                 absenceCountMap[tc.team_name] = tc.absence_count;
@@ -1848,6 +1995,9 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
                 }
                 if (tc.is_locked > 0) {
                   lockedTeamsSet.add(tc.team_name);
+                }
+                if (tc.skipped_by_me > 0) {
+                  skippedByMeSet.add(tc.team_name);
                 }
               });
 
@@ -1880,6 +2030,8 @@ const getNextTeamForJudge = (eventId, judgeEmail, round) => {
                       if (judgedTeamNames.has(t.name)) return false;
                       // Must not already be assigned to this team in current round
                       if (alreadyAssignedSet.has(t.name)) return false;
+                      // A skip keeps this judge off the team for this round only
+                      if (skippedByMeSet.has(t.name)) return false;
                       // Must not be locked by another judge
                       if (lockedTeamsSet.has(t.name)) return false;
                       // Two absence reports with no score take the team out of the queue
@@ -2030,6 +2182,110 @@ const markTeamAbsent = (eventId, judgeEmail, teamName, round) => {
         }
       );
     });
+  });
+};
+
+// Release a judge's open lock without scoring or marking the team absent.
+// The skip applies only to this judge and this round, and does not use a judge slot.
+const skipTeamForJudge = (eventId, judgeEmail, teamName, round) => {
+  return new Promise((resolve, reject) => {
+    db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+      if (beginErr) {
+        reject(beginErr);
+        return;
+      }
+
+      const fail = (err) => {
+        db.run('ROLLBACK', () => reject(err));
+      };
+
+      db.get(
+        `SELECT id FROM scores
+         WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?`,
+        [eventId, judgeEmail, teamName, round],
+        (scoreErr, score) => {
+          if (scoreErr) {
+            fail(scoreErr);
+            return;
+          }
+          if (score) {
+            db.run('ROLLBACK', () => resolve({ ok: false, reason: 'already_scored' }));
+            return;
+          }
+
+          db.get(
+            `SELECT id FROM judge_team_assignments
+             WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?
+               AND completed = 0 AND locked_at IS NOT NULL`,
+            [eventId, judgeEmail, teamName, round],
+            (assignErr, assignment) => {
+              if (assignErr) {
+                fail(assignErr);
+                return;
+              }
+              if (!assignment) {
+                db.run('ROLLBACK', () => resolve({ ok: false, reason: 'not_assigned' }));
+                return;
+              }
+
+              db.run(
+                `INSERT INTO judge_team_skips (event_id, judge_email, team_name, round)
+                 VALUES (?, ?, ?, ?)`,
+                [eventId, judgeEmail, teamName, round],
+                function (insertErr) {
+                  if (insertErr) {
+                    db.run('ROLLBACK', () => {
+                      if (insertErr.code === 'SQLITE_CONSTRAINT') {
+                        resolve({ ok: false, reason: 'already_skipped' });
+                        return;
+                      }
+                      reject(insertErr);
+                    });
+                    return;
+                  }
+
+                  const skipId = this.lastID;
+                  db.run(
+                    `DELETE FROM judge_team_assignments
+                     WHERE id = ? AND completed = 0`,
+                    [assignment.id],
+                    (deleteErr) => {
+                      if (deleteErr) {
+                        fail(deleteErr);
+                        return;
+                      }
+                      db.run('COMMIT', (commitErr) => {
+                        if (commitErr) {
+                          fail(commitErr);
+                          return;
+                        }
+                        resolve({ ok: true, id: skipId });
+                      });
+                    }
+                  );
+                }
+              );
+            }
+          );
+        }
+      );
+    });
+  });
+};
+
+const getSkippedTeamsByJudge = (eventId, judgeEmail, round) => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT team_name, round
+       FROM judge_team_skips
+       WHERE event_id = ? AND judge_email = ? AND round = ?
+       ORDER BY team_name`,
+      [eventId, judgeEmail, round],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
   });
 };
 
@@ -2220,12 +2476,20 @@ const lockTeamForJudge = (eventId, judgeEmail, teamName, round) => {
                (SELECT COUNT(*) FROM team_absences
                   WHERE event_id = ? AND team_name = ? AND round = ?) AS absence_count,
                (SELECT COUNT(*) FROM scores
-                  WHERE event_id = ? AND team_name = ? AND round = ?) AS score_count`,
-            [eventId, teamName, round, eventId, teamName, round, eventId, teamName, round, judgeEmail, eventId, teamName, round, judgeEmail, eventId, teamName, round, eventId, teamName, round],
+                  WHERE event_id = ? AND team_name = ? AND round = ?) AS score_count,
+               (SELECT COUNT(*) FROM judge_team_skips
+                  WHERE event_id = ? AND judge_email = ? AND team_name = ? AND round = ?) AS skipped_by_me`,
+            [eventId, teamName, round, eventId, teamName, round, eventId, teamName, round, judgeEmail, eventId, teamName, round, judgeEmail, eventId, teamName, round, eventId, teamName, round, eventId, judgeEmail, teamName, round],
             (capErr, capRow) => {
               if (capErr) {
                 db.run('ROLLBACK', () => { });
                 reject(capErr);
+                return;
+              }
+
+              if (capRow && capRow.skipped_by_me) {
+                db.run('ROLLBACK', () => { });
+                resolve({ success: false, reason: 'skipped' });
                 return;
               }
 
@@ -2881,7 +3145,8 @@ const getScoreById = (id) => {
       [id],
       (err, row) => {
         if (err) reject(err);
-        else resolve(row || null);
+        else if (!row) resolve(null);
+        else attachCriteria([row]).then((loaded) => resolve(loaded[0])).catch(reject);
       }
     );
   });
@@ -2919,18 +3184,63 @@ const listScores = (eventId, filters = {}) => {
   });
 };
 
-const updateScoreById = (id, score, notes) => {
+const updateScoreById = (id, score, notes, criteria = null) => {
+  const storedScore = criteria ? compositeScore(criteria) : score;
   return new Promise((resolve, reject) => {
-    db.run(
-      `UPDATE scores
-       SET score = ?, notes = ?, updated_at = datetime("now")
-       WHERE id = ?`,
-      [score, notes, id],
-      function (err) {
-        if (err) reject(err);
-        else resolve({ changes: this.changes });
+    if (!criteria) {
+      db.run(
+        `UPDATE scores
+         SET score = ?, notes = ?, updated_at = datetime("now")
+         WHERE id = ?`,
+        [storedScore, notes, id],
+        function (err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
+        }
+      );
+      return;
+    }
+
+    const fail = (err) => {
+      db.run('ROLLBACK', () => reject(err));
+    };
+
+    db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+      if (beginErr) {
+        reject(beginErr);
+        return;
       }
-    );
+
+      db.run(
+        `UPDATE scores
+         SET score = ?, notes = ?, updated_at = datetime("now")
+         WHERE id = ?`,
+        [storedScore, notes, id],
+        function (updateErr) {
+          if (updateErr) {
+            fail(updateErr);
+            return;
+          }
+          const changes = this.changes;
+          db.run('DELETE FROM score_criteria WHERE score_id = ?', [id], (deleteErr) => {
+            if (deleteErr) {
+              fail(deleteErr);
+              return;
+            }
+            insertCriteria(id, criteria, (insertErr) => {
+              if (insertErr) {
+                fail(insertErr);
+                return;
+              }
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) fail(commitErr);
+                else resolve({ changes, score: storedScore });
+              });
+            });
+          });
+        }
+      );
+    });
   });
 };
 
@@ -3057,6 +3367,13 @@ const deleteScoreById = (id) => {
           return;
         }
 
+        db.run('DELETE FROM score_criteria WHERE score_id = ?', [id], (criteriaErr) => {
+          if (criteriaErr) {
+            db.run('ROLLBACK', () => { });
+            reject(criteriaErr);
+            return;
+          }
+
         db.run('DELETE FROM scores WHERE id = ?', [id], (deleteErr) => {
           if (deleteErr) {
             db.run('ROLLBACK', () => { });
@@ -3085,6 +3402,7 @@ const deleteScoreById = (id) => {
               });
             }
           );
+        });
         });
       });
     });
@@ -3271,6 +3589,8 @@ module.exports = {
   getRequiredJudgesPerTeam,
   isConfirmedAbsent,
   markTeamAbsent,
+  skipTeamForJudge,
+  getSkippedTeamsByJudge,
   listAbsences,
   deleteAbsenceById,
   getAssignment,
