@@ -19,8 +19,10 @@ const accountRoutes = require('./routes/account');
 const volunteersRoutes = require('./routes/volunteers');
 const eventsRoutes = require('./routes/events');
 const schoolRoutes = require('./routes/school');
+const { resolveRequestEventId } = require('./middleware/selected-event');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-jwt-secret';
 
@@ -52,8 +54,10 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'change-this-secret',
     resave: false,
     saveUninitialized: false,
+    proxy: true,
     cookie: {
         secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
@@ -125,7 +129,7 @@ app.use(async (req, res, next) => {
         }
     }
 
-    req.eventId = req.session?.eventId || null;
+    req.eventId = await resolveRequestEventId(req);
     res.locals.currentYear = new Date().getFullYear();
     res.locals.baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 

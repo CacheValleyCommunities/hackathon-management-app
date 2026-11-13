@@ -4,6 +4,7 @@ const router = express.Router();
 const db = require('../db/database');
 const emailService = require('../services/email');
 const { checkAndReturnError } = require('../middleware/validation');
+const { rememberEvent } = require('../middleware/selected-event');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-jwt-secret';
 const JWT_EXPIRES_IN = '7d';
@@ -239,8 +240,7 @@ router.get('/continue', async (req, res) => {
     }
 
     signInUser(req, res, user);
-    req.session.eventId = event.id;
-    delete req.session.currentRound;
+    rememberEvent(req, res, event.id);
     saveDraft(req, {
       step: 'members',
       eventId: event.id,
@@ -312,8 +312,7 @@ router.post('/event', async (req, res) => {
     if (!usesSchoolWizard(req, draft)) {
       const existing = user ? await db.getIndividualTeam(event.id, user.id) : null;
       if (existing) {
-        req.session.eventId = event.id;
-        delete req.session.currentRound;
+        rememberEvent(req, res, event.id);
         return saveAndRedirect(req, res, '/participant');
       }
     } else if (user) {
@@ -321,8 +320,7 @@ router.post('/event', async (req, res) => {
       if (!membership) await db.upsertMembership(user.id, event.id, 'chaperone');
     }
 
-    req.session.eventId = event.id;
-    delete req.session.currentRound;
+    rememberEvent(req, res, event.id);
     draft.eventId = event.id;
     draft.step = usesSchoolWizard(req, draft) ? 'project' : 'school';
     saveDraft(req, draft);

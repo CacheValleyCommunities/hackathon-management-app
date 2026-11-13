@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { rememberEvent } = require('../middleware/selected-event');
 const { renderProjectIndex, renderProjectDetail } = require('./projects');
 
 const destinationForEvent = async (req, event) => {
@@ -50,8 +51,7 @@ router.post('/select', async (req, res) => {
       membership = await db.getMembership(req.session.user.id, event.id);
     }
 
-    req.session.eventId = event.id;
-    delete req.session.currentRound;
+    rememberEvent(req, res, event.id);
     await saveSession(req);
     const target = await destinationForEvent(req, event);
     return res.redirect(target);

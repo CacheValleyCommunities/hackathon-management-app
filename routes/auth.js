@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../db/database');
 const emailService = require('../services/email');
+const { clearSelectedEvent } = require('../middleware/selected-event');
 
 // Initialize email service
 emailService.init();
@@ -355,6 +356,7 @@ router.post('/accept-policies', async (req, res) => {
 router.get('/logout', (req, res) => {
   // Clear JWT cookie
   res.clearCookie('token');
+  clearSelectedEvent(res);
   
   // Destroy session
   req.session.destroy((err) => {

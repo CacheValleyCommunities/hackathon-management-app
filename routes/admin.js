@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const csv = require('csv-parser');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/rbac');
+const { rememberEvent } = require('../middleware/selected-event');
 const { checkAndReturnError } = require('../middleware/validation');
 const emailService = require('../services/email');
 
@@ -85,8 +86,7 @@ router.post('/events', async (req, res) => {
     const eventName = (req.body.eventName || '').trim();
     if (!eventName) return res.redirect('/admin/events?error=Name%20is%20required');
     const event = await db.createEvent({ event_name: eventName, status: 'draft' });
-    req.session.eventId = event.id;
-    delete req.session.currentRound;
+    rememberEvent(req, res, event.id);
     try {
       await saveSession(req);
     } catch (saveError) {

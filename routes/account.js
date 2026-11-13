@@ -4,6 +4,7 @@ const db = require('../db/database');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
+const { clearSelectedEvent } = require('../middleware/selected-event');
 
 // Middleware to require authentication
 const requireAuth = (req, res, next) => {
@@ -216,6 +217,7 @@ router.post('/delete', requireAuth, async (req, res) => {
       }
       res.clearCookie('token');
       res.clearCookie('connect.sid');
+      clearSelectedEvent(res);
       res.redirect('/auth/login?message=account_deleted');
     });
   } catch (error) {

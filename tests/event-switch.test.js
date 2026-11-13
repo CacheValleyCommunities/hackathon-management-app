@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const exphbs = require('express-handlebars');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'event-switch-'));
@@ -14,10 +15,12 @@ const db = require('../db/database');
 const eventsRoutes = require('../routes/events');
 const adminRoutes = require('../routes/admin');
 const helpers = require('../views/helpers');
+const { resolveRequestEventId } = require('../middleware/selected-event');
 
 const createApp = () => {
   const app = express();
   app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
   app.use(session({
     secret: 'event-switch-test',
     resave: false,
@@ -32,8 +35,8 @@ const createApp = () => {
   }));
   app.set('view engine', 'hbs');
   app.set('views', path.join(__dirname, '../views'));
-  app.use((req, res, next) => {
-    req.eventId = req.session?.eventId || null;
+  app.use(async (req, res, next) => {
+    req.eventId = await resolveRequestEventId(req);
     res.locals.currentYear = new Date().getFullYear();
     res.locals.baseUrl = 'http://127.0.0.1';
     res.locals.currentRound = req.session?.currentRound || 1;
@@ -209,6 +212,48 @@ describe('admin event switching', () => {
     expect(eventsPage.status).toBe(200);
     expect(eventsPage.body).toContain(`/events/${firstEvent.slug} · open · current`);
     expect(eventsPage.body).not.toContain(`/events/${secondEvent.slug} · draft · current`);
+  });
+
+  test('the event cookie keeps a draft event selected when the session is new', async () => {
+    const jar = new Map();
+    const login = await request(server, {
+      method: 'POST',
+      path: '/test/session',
+      body: {
+        id: String(admin.id),
+        email: admin.email,
+        name: admin.name,
+        role: 'admin',
+        eventId: String(firstEvent.id)
+      }
+    });
+    let cookie = mergeCookies(jar, login.headers['set-cookie']);
+    const selected = await request(server, {
+      method: 'POST',
+      path: '/events/select',
+      cookie,
+      body: { eventId: String(secondEvent.id) }
+    });
+    cookie = mergeCookies(jar, selected.headers['set-cookie']);
+    const eventCookie = jar.get('eventId');
+    expect(eventCookie).toBe(`eventId=${secondEvent.id}`);
+
+    const fresh = new Map();
+    const again = await request(server, {
+      method: 'POST',
+      path: '/test/session',
+      body: {
+        id: String(admin.id),
+        email: admin.email,
+        name: admin.name,
+        role: 'admin'
+      }
+    });
+    const freshCookie = [mergeCookies(fresh, again.headers['set-cookie']), eventCookie].filter(Boolean).join('; ');
+    const dashboard = await request(server, { method: 'GET', path: '/admin', cookie: freshCookie });
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body).toContain('Admin Dashboard</h1>');
+    expect(dashboard.body).toContain('Second Switch Event');
   });
 
   test('a non-admin cannot open a draft event', async () => {
