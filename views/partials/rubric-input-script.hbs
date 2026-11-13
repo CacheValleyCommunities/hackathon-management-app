@@ -65,22 +65,162 @@
             }
         }
 
+        var timerRoot = document.getElementById('judging-timer');
+        var timerClock = document.getElementById('judging-timer-clock');
+        var audioCtx = null;
+        var timerHandle = null;
+
+        function timerKey() {
+            return 'judging-timer:' + timerRoot.getAttribute('data-team') + ':' + timerRoot.getAttribute('data-round');
+        }
+
+        function storageGet(key) {
+            try {
+                return sessionStorage.getItem(key);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function storageSet(key, value) {
+            try {
+                sessionStorage.setItem(key, value);
+            } catch (e) {
+                return;
+            }
+        }
+
+        function durationMs() {
+            var seconds = Number(timerRoot.getAttribute('data-seconds'));
+            if (!isFinite(seconds) || seconds <= 0) seconds = 180;
+            return seconds * 1000;
+        }
+
+        function formatRemaining(ms) {
+            var total = ms <= 0 ? 0 : Math.ceil(ms / 1000);
+            var minutes = Math.floor(total / 60);
+            var seconds = total % 60;
+            return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+        }
+
+        function remainingMs() {
+            var startedAt = Number(storageGet(timerKey()));
+            if (!startedAt) return durationMs();
+            return durationMs() - (Date.now() - startedAt);
+        }
+
+        function unlockAudio() {
+            var AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            if (!audioCtx) audioCtx = new AudioContext();
+            var playIfDue = function () {
+                if (remainingMs() <= 0) beep();
+            };
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(playIfDue).catch(function () { return; });
+                return;
+            }
+            playIfDue();
+        }
+
+        function armAudioUnlock() {
+            function once() {
+                unlockAudio();
+                document.removeEventListener('pointerdown', once);
+                document.removeEventListener('keydown', once);
+            }
+            document.addEventListener('pointerdown', once);
+            document.addEventListener('keydown', once);
+        }
+
+        function beep() {
+            var flag = timerKey() + ':beeped';
+            if (storageGet(flag) || !audioCtx) return;
+            try {
+                var osc = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 880;
+                gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.45);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.45);
+                storageSet(flag, '1');
+            } catch (e) {
+                return;
+            }
+        }
+
+        function paint(remaining) {
+            if (!timerClock) return;
+            timerClock.textContent = formatRemaining(remaining);
+            if (remaining <= 0) {
+                timerClock.classList.remove('text-gray-900');
+                timerClock.classList.add('text-red-600');
+                beep();
+            }
+        }
+
+        function tick(startedAt) {
+            var remaining = durationMs() - (Date.now() - startedAt);
+            paint(remaining);
+            if (remaining <= 0) return;
+            timerHandle = window.setTimeout(function () {
+                tick(startedAt);
+            }, 200);
+        }
+
+        function startTimer() {
+            if (!timerRoot) return;
+            var startedAt = Number(storageGet(timerKey()));
+            if (!startedAt) {
+                startedAt = Date.now();
+                storageSet(timerKey(), String(startedAt));
+            }
+            if (timerHandle) window.clearTimeout(timerHandle);
+            armAudioUnlock();
+            tick(startedAt);
+        }
+
+        function showScoring(focus) {
+            var confirmPanel = document.getElementById('team-confirm');
+            var scoreForm = document.getElementById('score-form');
+            var title = document.getElementById('judge-score-title');
+            var absent = document.getElementById('absent-below-score');
+            var skip = document.getElementById('skip-below-score');
+            if (confirmPanel) confirmPanel.hidden = true;
+            if (scoreForm) scoreForm.hidden = false;
+            if (absent) absent.hidden = false;
+            if (skip) skip.hidden = false;
+            if (title) title.textContent = 'Score';
+            if (focus) {
+                var firstChoice = document.querySelector('[data-rubric-choice]');
+                if (firstChoice) firstChoice.focus();
+            }
+        }
+
+        if (timerRoot) {
+            var storedStart = Number(storageGet(timerKey()));
+            var scoreForm = document.getElementById('score-form');
+            var formVisible = scoreForm && !scoreForm.hidden;
+            if (storedStart) {
+                showScoring(false);
+                startTimer();
+            } else if (formVisible) {
+                startTimer();
+            }
+        }
+
         var confirmButton = document.getElementById('confirm-team-button');
         if (confirmButton) {
             confirmButton.addEventListener('click', function () {
-                var confirmPanel = document.getElementById('team-confirm');
-                var scoreForm = document.getElementById('score-form');
-                var title = document.getElementById('judge-score-title');
-                var absent = document.getElementById('absent-below-score');
-                var skip = document.getElementById('skip-below-score');
-                if (confirmPanel) confirmPanel.hidden = true;
-                if (scoreForm) scoreForm.hidden = false;
-                if (absent) absent.hidden = false;
-                if (skip) skip.hidden = false;
-                if (title) title.textContent = 'Score';
+                unlockAudio();
+                showScoring(true);
+                startTimer();
                 window.scrollTo(0, 0);
-                var firstChoice = document.querySelector('[data-rubric-choice]');
-                if (firstChoice) firstChoice.focus();
             });
         }
     })();

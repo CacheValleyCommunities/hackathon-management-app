@@ -238,4 +238,32 @@ describe('event isolation and school accounts', () => {
     const storedSchool = await db.getTeamById(school.id, true);
     expect(!storedSchool.team_members || storedSchool.team_members.length === 0).toBe(true);
   });
+
+  test('judging time defaults to 3 minutes and survives unrelated setting saves', async () => {
+    const created = await db.getEventById(firstEvent.id);
+    expect(created.judging_seconds).toBe(180);
+    expect(created.judging_minutes).toBe(3);
+
+    await db.updateEventSettings(firstEvent.id, {
+      event_name: created.event_name,
+      start_date: created.start_date,
+      end_date: created.end_date,
+      divisions: created.divisions,
+      judging_seconds: 300
+    });
+    const updated = await db.getEventById(firstEvent.id);
+    expect(updated.judging_seconds).toBe(300);
+    expect(updated.judging_minutes).toBe(5);
+
+    await db.updateEventSettings(firstEvent.id, {
+      event_name: created.event_name,
+      start_date: created.start_date,
+      end_date: created.end_date,
+      divisions: created.divisions,
+      landing_page_content: created.landing_page_content
+    });
+    const preserved = await db.getEventById(firstEvent.id);
+    expect(preserved.judging_seconds).toBe(300);
+    expect(preserved.judging_minutes).toBe(5);
+  });
 });

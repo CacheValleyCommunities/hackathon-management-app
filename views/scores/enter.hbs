@@ -17,9 +17,17 @@
                     </h1>
                     <p class="text-lg text-gray-600">{{teamName}}</p>
                 </div>
-                <div class="sm:text-right">
-                    <div class="text-xs text-gray-500 mb-1">Round</div>
-                    <div class="text-3xl font-bold text-gray-900">{{round}}</div>
+                <div class="flex items-start gap-8">
+                    {{#unless isEdit}}
+                    <div id="judging-timer" class="text-left sm:text-right" data-seconds="{{judgingSeconds}}" data-team="{{teamName}}" data-round="{{round}}">
+                        <div class="text-xs text-gray-500 mb-1">Time left</div>
+                        <div id="judging-timer-clock" class="text-3xl font-bold text-gray-900 tabular-nums">{{judgingMinutes}}:00</div>
+                    </div>
+                    {{/unless}}
+                    <div class="sm:text-right">
+                        <div class="text-xs text-gray-500 mb-1">Round</div>
+                        <div class="text-3xl font-bold text-gray-900">{{round}}</div>
+                    </div>
                 </div>
             </div>
         </div>

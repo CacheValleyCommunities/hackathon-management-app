@@ -461,6 +461,8 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
       existingScore,
       rubric: rubricFields(existingScore && existingScore.criteria),
       rubricMax: RUBRIC_MAX,
+      judgingSeconds: eventSettings.judging_seconds,
+      judgingMinutes: eventSettings.judging_minutes,
       isEdit: !!existingScore,
       query: req.query
     });
