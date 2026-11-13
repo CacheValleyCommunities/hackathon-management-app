@@ -621,7 +621,7 @@ router.post('/submit', requireJudge, async (req, res) => {
       res.redirect(`/scores/next-team`);
     } else {
       // Redirect back to select-team page with success message
-      res.redirect(`/scores/select-team?round=${roundNum}&success=1`);
+      res.redirect(`/scores/judge-queue?message=score_saved#scores`);
     }
   } catch (error) {
     console.error('Error submitting score:', error);

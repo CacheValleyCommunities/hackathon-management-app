@@ -212,6 +212,12 @@
     <section data-panel="scores" class="px-4 py-6" hidden>
         <p class="text-xl leading-snug mb-6">These are the scores you already gave.</p>
 
+        {{#if (eq (lookup query 'message') 'score_saved')}}
+        <div class="mb-6 rounded-2xl bg-green-100 border-2 border-green-800 p-5">
+            <p class="text-2xl font-bold text-green-950">Score saved.</p>
+        </div>
+        {{/if}}
+
         {{#if scores.length}}
             {{#each scoresByRound}}
             <h2 class="text-3xl font-bold mt-2 mb-4">Round {{@key}}</h2>
