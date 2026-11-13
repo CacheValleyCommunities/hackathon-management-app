@@ -13,6 +13,10 @@ const destinationForEvent = async (req, event) => {
   return '/events';
 };
 
+const saveSession = (req) => new Promise((resolve, reject) => {
+  req.session.save((err) => (err ? reject(err) : resolve()));
+});
+
 router.get('/', async (req, res) => {
   try {
     const events = await db.listVisibleEvents(req.session.user || null);
@@ -48,6 +52,7 @@ router.post('/select', async (req, res) => {
 
     req.session.eventId = event.id;
     delete req.session.currentRound;
+    await saveSession(req);
     const target = await destinationForEvent(req, event);
     return res.redirect(target);
   } catch (error) {

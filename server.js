@@ -41,11 +41,14 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session configuration
+const sessionStore = new SQLiteStore({
+    db: 'sessions.db',
+    dir: process.env.SESSION_DB_DIR || './db',
+    concurrentDb: true
+});
+sessionStore.db.run('PRAGMA busy_timeout = 5000');
 app.use(session({
-    store: new SQLiteStore({
-        db: 'sessions.db',
-        dir: process.env.SESSION_DB_DIR || './db'
-    }),
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || 'change-this-secret',
     resave: false,
     saveUninitialized: false,
@@ -99,12 +102,23 @@ app.use(async (req, res, next) => {
         try {
             const freshUser = await db.getUserByEmail(sessionUser.email);
             if (freshUser) {
-                sessionUser.id = freshUser.id;
-                sessionUser.role = freshUser.role === 'admin' ? 'admin' : 'user';
-                sessionUser.account_type = freshUser.account_type || 'individual';
-                sessionUser.school_name = freshUser.school_name || null;
-                sessionUser.name = freshUser.name;
-                req.session.user = sessionUser;
+                const nextRole = freshUser.role === 'admin' ? 'admin' : 'user';
+                const nextAccountType = freshUser.account_type || 'individual';
+                const nextSchoolName = freshUser.school_name || null;
+                const nextName = freshUser.name;
+                const userChanged = sessionUser.id !== freshUser.id
+                    || sessionUser.role !== nextRole
+                    || sessionUser.account_type !== nextAccountType
+                    || sessionUser.school_name !== nextSchoolName
+                    || sessionUser.name !== nextName;
+                if (userChanged) {
+                    sessionUser.id = freshUser.id;
+                    sessionUser.role = nextRole;
+                    sessionUser.account_type = nextAccountType;
+                    sessionUser.school_name = nextSchoolName;
+                    sessionUser.name = nextName;
+                    req.session.user = sessionUser;
+                }
             }
         } catch (error) {
             console.error('Error refreshing user:', error);

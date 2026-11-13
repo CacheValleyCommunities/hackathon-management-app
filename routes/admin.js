@@ -12,13 +12,19 @@ const emailService = require('../services/email');
 
 const EVENT_ROLES = ['judge', 'participant', 'chaperone'];
 
+const saveSession = (req) => new Promise((resolve, reject) => {
+  req.session.save((err) => (err ? reject(err) : resolve()));
+});
+
 router.use((req, res, next) => {
   if (!req.session.user) return res.redirect('/auth/login');
   if (req.session.user.role !== 'admin') {
     return res.status(403).render('error', { message: 'Access denied. Required role: admin' });
   }
   if (req.path === '/events' || req.path.startsWith('/events/')) return next();
-  if (!req.eventId) return res.redirect('/admin/events');
+  if (!req.eventId) {
+    return res.redirect('/admin/events?error=' + encodeURIComponent('Choose an event before opening the admin area.'));
+  }
   next();
 });
 
@@ -81,6 +87,14 @@ router.post('/events', async (req, res) => {
     const event = await db.createEvent({ event_name: eventName, status: 'draft' });
     req.session.eventId = event.id;
     delete req.session.currentRound;
+    try {
+      await saveSession(req);
+    } catch (saveError) {
+      console.error('Create event session save error:', saveError);
+      return res.status(500).render('error', {
+        message: 'The event was created, but it could not be selected. Open it from the events list.'
+      });
+    }
     res.redirect('/admin/settings');
   } catch (error) {
     console.error('Create event error:', error);
@@ -155,7 +169,7 @@ const upload = multer({
 // GET admin dashboard
 router.get('/', requireAdmin, async (req, res) => {
   try {
-    const teams = await db.getTeams(req.eventId, null, true); // Include sensitive fields for admin
+    const teams = await db.getTeamSummaries(req.eventId);
     const users = await db.getAllUsers(req.eventId);
     const tables = await db.getTableNames(req.eventId);
     const eventSettings = await db.getEventSettings(req.eventId);

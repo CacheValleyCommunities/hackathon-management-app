@@ -1024,6 +1024,19 @@ const getTeams = (eventId, tableName = null, includeSensitive = false) => {
   });
 };
 
+const getTeamSummaries = (eventId) => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT t.id, t.name, t.table_name, t.project_name, t.contact_email
+       FROM teams t
+       WHERE t.event_id = ?
+       ORDER BY t.table_name, t.name`,
+      [eventId],
+      (err, rows) => (err ? reject(err) : resolve(rows || []))
+    );
+  });
+};
+
 const getTeamTable = (eventId, teamName) => {
   return new Promise((resolve, reject) => {
     db.get('SELECT table_name FROM teams WHERE event_id = ? AND name = ?', [eventId, teamName], (err, row) => {
@@ -3229,6 +3242,7 @@ module.exports = {
   createTeam,
   syncTeams,
   getTeams,
+  getTeamSummaries,
   getTeamById,
   getTeamTable,
   getIndividualTeam,
