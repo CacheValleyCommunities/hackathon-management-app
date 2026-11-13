@@ -20,55 +20,79 @@ const sessionPayload = (user) => ({
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-jwt-secret';
 const JWT_EXPIRES_IN = '7d'; // Token valid for 7 days
 
+const safeNextPath = (value) => {
+  if (typeof value !== 'string') return null;
+  const path = value.trim();
+  if (!path.startsWith('/') || path.length > 200) return null;
+  if (path.startsWith('//') || path.startsWith('/\\')) return null;
+  if (/[\s\\:@]/.test(path)) return null;
+  return path;
+};
+
+const rememberLoginNext = (req) => {
+  const next = safeNextPath(req.query.next) || safeNextPath(req.body && req.body.next);
+  if (next) req.session.loginNext = next;
+};
+
+const takeLoginNext = (req) => {
+  const next = safeNextPath(req.session.loginNext) || '/events';
+  delete req.session.loginNext;
+  return next;
+};
+
+const renderLogin = async (req, res, { error, success } = {}) => {
+  let eventName = 'Hackathon';
+  try {
+    const eventSettings = await db.getEventSettings(req.eventId);
+    eventName = eventSettings.event_name || eventName;
+  } catch (settingsError) {
+    console.error('Login settings error:', settingsError);
+  }
+  res.render('auth/login', {
+    title: `${eventName} Sign In`,
+    eventName,
+    error: error || null,
+    success: success || null,
+    next: req.session.loginNext || '',
+    layout: 'main'
+  });
+};
+
 // GET login page
 router.get('/login', async (req, res) => {
   try {
-    // Check if user is already logged in via JWT
     const token = req.cookies?.token;
-    if (token) {
+    let signedIn = !!req.session.user;
+    if (!signedIn && token) {
       try {
         jwt.verify(token, JWT_SECRET);
-        // Valid token, redirect to dashboard
-        return res.redirect('/events');
+        signedIn = true;
       } catch (err) {
-        // Invalid token, clear it and show login
         res.clearCookie('token');
       }
     }
-    
-    const eventSettings = await db.getEventSettings(req.eventId);
-    res.render('auth/login', { 
-      title: `${eventSettings.event_name} Sign In`,
-      eventName: eventSettings.event_name,
-      error: null,
-      success: null,
-      layout: 'main'
-    });
+
+    rememberLoginNext(req);
+    if (signedIn) {
+      return res.redirect(takeLoginNext(req));
+    }
+
+    await renderLogin(req, res);
   } catch (error) {
     console.error('Login page error:', error);
-    res.render('auth/login', { 
-      title: 'Sign In',
-      eventName: 'Hackathon',
-      error: null,
-      success: null,
-      layout: 'main'
-    });
+    await renderLogin(req, res);
   }
 });
 
 // POST request magic link
 router.post('/login', async (req, res) => {
   try {
+    rememberLoginNext(req);
     const { email } = req.body;
     const eventSettings = await db.getEventSettings(req.eventId);
     
     if (!email || !email.includes('@')) {
-      return res.render('auth/login', {
-        title: `${eventSettings.event_name} Sign In`,
-        eventName: eventSettings.event_name,
-        error: 'Please enter a valid email address',
-        success: null
-      });
+      return renderLogin(req, res, { error: 'Please enter a valid email address' });
     }
 
     // Create magic token
@@ -77,30 +101,14 @@ router.post('/login', async (req, res) => {
     // Send magic link email
     try {
       await emailService.sendMagicLink(email.toLowerCase().trim(), token, eventSettings.event_name);
-      res.render('auth/login', {
-        title: `${eventSettings.event_name} Sign In`,
-        eventName: eventSettings.event_name,
-        error: null,
-        success: 'Check your email for a login link!'
-      });
+      return renderLogin(req, res, { success: 'Check your email for a login link!' });
     } catch (emailError) {
       console.error('Email error:', emailError);
-      res.render('auth/login', {
-        title: `${eventSettings.event_name} Sign In`,
-        eventName: eventSettings.event_name,
-        error: 'Failed to send email. Please check your email configuration.',
-        success: null
-      });
+      return renderLogin(req, res, { error: 'Failed to send email. Please check your email configuration.' });
     }
   } catch (error) {
     console.error('Login error:', error);
-    const eventSettings = await db.getEventSettings(req.eventId);
-    res.render('auth/login', {
-      title: `${eventSettings.event_name} Sign In`,
-      eventName: eventSettings.event_name,
-      error: 'An error occurred. Please try again.',
-      success: null
-    });
+    return renderLogin(req, res, { error: 'An error occurred. Please try again.' });
   }
 });
 
@@ -175,7 +183,7 @@ router.get('/verify', async (req, res) => {
     req.session.user = jwtPayload;
     req.session.currentRound = req.session.currentRound || 1;
 
-    return res.redirect('/events');
+    return res.redirect(takeLoginNext(req));
   } catch (error) {
     console.error('Verify error:', error);
     const eventSettings = await db.getEventSettings(req.eventId);
@@ -312,7 +320,7 @@ router.post('/accept-policies', async (req, res) => {
     req.session.currentRound = req.session.currentRound || 1;
     delete req.session.pendingAuth;
 
-    return res.redirect('/events');
+    return res.redirect(takeLoginNext(req));
   } catch (error) {
     console.error('Accept policies error:', error);
     
@@ -335,7 +343,7 @@ router.post('/accept-policies', async (req, res) => {
 
           req.session.user = jwtPayload;
           delete req.session.pendingAuth;
-          return res.redirect('/events');
+          return res.redirect(takeLoginNext(req));
         }
       } catch (recoveryError) {
         console.error('Error during recovery login:', recoveryError);

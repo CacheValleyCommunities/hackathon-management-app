@@ -22,6 +22,10 @@ router.get('/', async (req, res) => {
     });
   }
 
+  if (req.session.registrationDraft && req.session.registrationDraft.step === 'parent-sent') {
+    return res.redirect('/register');
+  }
+
   if (!req.eventId) {
     return res.redirect('/events');
   }
@@ -31,6 +35,10 @@ router.get('/', async (req, res) => {
   }
   if (req.eventRole === 'chaperone' || (req.session.user.account_type === 'school' && !req.eventRole)) {
     return res.redirect('/school');
+  }
+
+  if (req.eventRole !== 'judge' && req.session.user.role !== 'admin') {
+    return res.redirect('/events');
   }
 
   const eventSettings = req.eventSettings || await db.getEventSettings(req.eventId);

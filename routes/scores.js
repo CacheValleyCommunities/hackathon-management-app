@@ -11,6 +11,68 @@ const scoreEligibilityMessage = (reason) => {
   return 'This team is not assigned to you. Use the judge queue to get a team.';
 };
 
+async function buildTableGrid(eventId, userRole) {
+  const tables = await db.getTableNames(eventId);
+  const allTeams = await db.getTeams(eventId);
+
+  const teams = allTeams.map(team => {
+    const teamData = { ...team };
+    if (userRole !== 'admin') {
+      delete teamData.contact_email;
+    }
+    return teamData;
+  });
+
+  const tableMap = {};
+  teams.forEach(team => {
+    if (!tableMap[team.table_name]) {
+      tableMap[team.table_name] = [];
+    }
+    tableMap[team.table_name].push(team);
+  });
+
+  const lettersSet = new Set();
+  const numbersSet = new Set();
+
+  tables.forEach(tableName => {
+    const match = tableName.match(/^([A-Z]+)(\d+)$/i);
+    if (match) {
+      lettersSet.add(match[1].toUpperCase());
+      numbersSet.add(parseInt(match[2], 10));
+    }
+  });
+
+  const letters = Array.from(lettersSet).sort().reverse();
+  const numbers = Array.from(numbersSet).sort((a, b) => b - a);
+  const gridRows = [];
+
+  numbers.forEach(num => {
+    const row = [];
+    letters.forEach(letter => {
+      const tableId = `${letter}${num}`;
+      row.push({
+        id: tableId,
+        teams: tableMap[tableId] || []
+      });
+    });
+    gridRows.push(row);
+  });
+
+  const mapTables = Object.keys(tableMap)
+    .filter(id => tableMap[id].length > 0)
+    .sort()
+    .map(id => ({
+      id,
+      teams: tableMap[id].map(team => ({
+        name: team.name,
+        division: team.division || ''
+      })),
+      searchText: `${id} ${tableMap[id].map(team => team.name).join(' ')}`.toLowerCase()
+    }));
+
+  return { gridRows, mapTables };
+}
+
 // Middleware to require authentication
 const requireAuth = (req, res, next) => {
   if (!req.session.user) {
@@ -72,20 +134,42 @@ router.get('/judge-queue', requireJudge, async (req, res) => {
     const totalTeams = queueStats.length;
     const teamsNeedingJudges = queueStatsWithSelfAssign.filter(t => !t.isAbsent && t.judge_count < requiredJudgesPerTeam).length;
     const myTeamCount = judgedTeams.length;
+    const teamsYouCanPick = queueStatsWithSelfAssign.filter(t => t.canSelfAssign);
+    const assignmentTables = currentAssignments.map(assignment => assignment.table_name);
+
+    const scores = await db.getJudgeScores(req.eventId, judgeEmail);
+    const lockedRounds = JSON.parse(eventSettings.locked_rounds || '[]');
+    const scoresByRound = {};
+    scores.forEach(score => {
+      if (!scoresByRound[score.round]) {
+        scoresByRound[score.round] = [];
+      }
+      scoresByRound[score.round].push(score);
+    });
+
+    const { gridRows, mapTables } = await buildTableGrid(req.eventId, req.session.user.role);
 
     res.render('scores/judge-queue', {
       title: 'Judge Queue',
+      judgeShell: true,
       round,
       queueStats: queueStatsWithSelfAssign,
+      teamsYouCanPick,
       judgedTeams,
       currentAssignments,
+      assignmentTables,
       totalTeams,
       teamsNeedingJudges,
       myTeamCount,
       requiredJudgesPerTeam,
       eventSettings,
       judgingLocked,
-      query: req.query
+      query: req.query,
+      scores,
+      scoresByRound,
+      lockedRounds,
+      gridRows,
+      mapTables
     });
   } catch (error) {
     console.error('Error loading judge queue:', error);
@@ -597,8 +681,7 @@ router.get('/results', requireAuth, async (req, res) => {
       divisions,
       round,
       selectedDivision,
-      categoryLeaders,
-      layout: 'minimal'
+      categoryLeaders
     });
   } catch (error) {
     console.error('Error loading results:', error);
@@ -642,63 +725,8 @@ router.get('/results/json', requireAuth, async (req, res) => {
 // GET table map (for modal display)
 router.get('/table-map', requireJudge, async (req, res) => {
   try {
-    const tables = await db.getTableNames(req.eventId);
-    const allTeams = await db.getTeams(req.eventId);
+    const { gridRows } = await buildTableGrid(req.eventId, req.session.user.role);
 
-    // Filter out sensitive data (contact_email) for non-admin users
-    const teams = allTeams.map(team => {
-      const teamData = { ...team };
-      // Only admins can see contact_email
-      if (req.session.user.role !== 'admin') {
-        delete teamData.contact_email;
-      }
-      return teamData;
-    });
-
-    // Create a map of table -> teams array for quick lookup (supports multiple teams per table)
-    const tableMap = {};
-    teams.forEach(team => {
-      if (!tableMap[team.table_name]) {
-        tableMap[team.table_name] = [];
-      }
-      tableMap[team.table_name].push(team);
-    });
-
-    // Generate grid structure dynamically from database tables
-    // Parse table names to extract letters and numbers
-    const lettersSet = new Set();
-    const numbersSet = new Set();
-
-    tables.forEach(tableName => {
-      // Match pattern: letters followed by numbers (e.g., A1, AB12, P10)
-      const match = tableName.match(/^([A-Z]+)(\d+)$/i);
-      if (match) {
-        lettersSet.add(match[1].toUpperCase());
-        numbersSet.add(parseInt(match[2]));
-      }
-    });
-
-    // Convert to sorted arrays
-    // Letters in reverse alphabetical order (P to A) for display from left to right
-    const letters = Array.from(lettersSet).sort().reverse();
-    // Numbers in descending order (10 to 1) for display from top to bottom
-    const numbers = Array.from(numbersSet).sort((a, b) => b - a);
-
-    const gridRows = [];
-
-    numbers.forEach(num => {
-      const row = [];
-      letters.forEach(letter => {
-        const tableId = `${letter}${num}`;
-        row.push({
-          id: tableId,
-          teams: tableMap[tableId] || []
-        });
-      });
-      gridRows.push(row);
-    });
-
-    // Render just the table map section
     res.render('partials/table-map', {
       gridRows,
       layout: false

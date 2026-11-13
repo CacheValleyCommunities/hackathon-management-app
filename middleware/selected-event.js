@@ -32,19 +32,26 @@ const clearSelectedEvent = (res) => {
   });
 };
 
+const isPublicEvent = (event) => event.status !== 'draft' && event.status !== 'archived';
+
 const resolveRequestEventId = async (req) => {
   const sessionId = parsePositiveInt(req.session?.eventId);
   if (sessionId) return sessionId;
 
   const cookieId = parsePositiveInt(req.cookies?.eventId);
-  if (!cookieId || !req.session?.user) return null;
+  if (!cookieId) return null;
 
   const event = await db.getEventById(cookieId);
   if (!event) return null;
 
-  let allowed = req.session.user.role === 'admin' || event.status === 'open';
-  if (!allowed && req.session.user.id) {
-    const membership = await db.getMembership(req.session.user.id, cookieId);
+  const user = req.session?.user;
+  let allowed = false;
+  if (user && user.role === 'admin') {
+    allowed = true;
+  } else if (isPublicEvent(event)) {
+    allowed = true;
+  } else if (user && user.id) {
+    const membership = await db.getMembership(user.id, cookieId);
     allowed = !!membership;
   }
   if (!allowed) return null;

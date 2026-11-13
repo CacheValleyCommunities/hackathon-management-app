@@ -59,7 +59,7 @@
         <div class="flex flex-wrap gap-3 mb-10">
             <a href="/events/{{eventSettings.slug}}/projects" class="px-4 py-2 text-sm font-semibold border border-gray-300 rounded-lg">View projects</a>
             {{#if (eq eventSettings.status 'open')}}
-            <a href="{{#if user}}/events{{else}}/auth/login{{/if}}" class="px-4 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg">Register a team</a>
+            <a href="{{registerUrl}}" class="px-4 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg">Register a team</a>
             {{/if}}
         </div>
         {{/if}}
@@ -190,14 +190,14 @@
         <!-- Call to Action Section -->
         <div class="mt-24 pt-16 border-t border-gray-200">
             <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                <a href="/projects"
+                <a href="{{projectsUrl}}"
                     class="inline-flex items-center justify-center px-8 py-4 border-2 border-gray-900 rounded-full text-gray-900 hover:bg-gray-900 hover:text-white transition-all duration-200 font-semibold text-lg">
                     View Projects
                     <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                     </svg>
                 </a>
-                <a href="/register"
+                <a href="{{registerUrl}}"
                     class="inline-flex items-center justify-center px-8 py-4 bg-gray-900 text-white rounded-full hover:bg-gray-800 transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl">
                     Register Team
                     <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0{{#if judgeShell}}, viewport-fit=cover{{/if}}">
     <title>{{title}} - {{#if eventSettings.event_name}}{{eventSettings.event_name}}{{else}}Hackathon Judging{{/if}}
     </title>
     {{> meta-tags}}
@@ -52,16 +52,25 @@
             opacity: 1;
             visibility: visible;
         }
+
+        @media (max-width: 1023px) {
+            body.judge-shell > div > header,
+            body.judge-shell > div > footer,
+            body.judge-shell #mobile-menu,
+            body.judge-shell #mobile-menu-overlay {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 min-h-screen{{#if judgeShell}} judge-shell{{/if}}">
     <div class="min-h-screen bg-white max-w-[1920px] mx-auto shadow-2xl">
         <header class="bg-white border-b border-gray-200 sticky top-0 z-50 backdrop-blur-sm bg-white/95">
             <div class="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
                 <div class="flex items-center justify-between">
                     <!-- Logo -->
-                    <a href="/" class="flex items-center gap-3 sm:gap-4 hover:opacity-80 transition">
+                    <a href="{{homeUrl}}" class="flex items-center gap-3 sm:gap-4 hover:opacity-80 transition">
                         {{#if eventSettings.logo_filename}}
                         <img src="/uploads/{{eventSettings.logo_filename}}" alt="{{eventSettings.event_name}}"
                             class="max-h-10 sm:max-h-12 max-w-[120px] sm:max-w-[150px] object-contain">
@@ -70,73 +79,12 @@
 
                     <!-- Desktop Navigation & Mobile Hamburger -->
                     <div class="flex items-center gap-2 sm:gap-4">
-                        <!-- Desktop Navigation -->
                         <nav class="hidden lg:flex items-center gap-1">
-
-                            <!-- Home -->
-                            <a href="/"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Home
-                            </a>
-                            <a href="/events"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                {{#if eventSettings.id}}{{eventSettings.event_name}}{{else}}Events{{/if}}
-                            </a>
-
-                            {{#if user}}
-
-                            {{#if (or (eq user.role 'judge') (eq user.role 'admin'))}}
-                            <!-- Judge Queue -->
-                            <a href="/scores/judge-queue"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Queue
-                            </a>
-
-                            <!-- Enter Scores -->
-                            <a href="/scores/select-team?round={{currentRound}}"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Score
-                            </a>
-
-                            <!-- My Scores -->
-                            <a href="/scores/my-scores"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                My Scores
-                            </a>
-
-                            <!-- Leaderboard -->
-                            <a href="/scores/results?round={{currentRound}}"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Leaderboard
-                            </a>
-                            {{/if}}
-
-                            {{#if (eq user.role 'admin')}}
-                            <!-- Admin Dashboard -->
-                            <a href="/admin"
-                                class="px-3 py-2 text-sm font-medium text-yellow-700 hover:text-yellow-900 hover:bg-yellow-50 rounded-lg transition">
-                                Admin
-                            </a>
-                            {{/if}}
-
-                            {{#if (eq user.role 'participant')}}
-                            <a href="/participant"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Dashboard
-                            </a>
-                            {{/if}}
-                            {{#if (eq user.role 'chaperone')}}
-                            <a href="/school"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                School teams
-                            </a>
-                            {{/if}}
-                            {{/if}}
+                            {{> role-nav dense=true}}
                         </nav>
 
-                        <!-- User Menu / Auth Buttons -->
+                        {{#if user}}
                         <div class="hidden lg:flex items-center gap-3 ml-4 pl-4 border-l border-gray-200">
-                            {{#if user}}
                             <!-- Account Dropdown -->
                             <div class="relative" x-data="{ open: false }"
                                 x-init="window.accountDropdown = { toggle: () => open = !open, close: () => open = false }">
@@ -161,7 +109,7 @@
                                     style="display: none;">
                                     <div class="py-1">
                                         <div class="px-4 py-2 border-b border-gray-200">
-                                            <p class="text-xs text-gray-500">{{#if (eq user.role 'admin')}}Admin{{else if (eq user.role 'judge')}}Judge{{else if (eq user.role 'chaperone')}}Chaperone{{else if (eq user.account_type 'school')}}School{{else}}Participant{{/if}}</p>
+                                            <p class="text-xs text-gray-500">{{> role-label}}</p>
                                             <p class="text-sm font-medium text-gray-900 truncate">{{user.email}}</p>
                                         </div>
                                         <a href="/account/settings" @click="open = false"
@@ -187,55 +135,11 @@
                                     </div>
                                 </div>
                             </div>
-                            {{else}}
-                            <a href="/projects"
-                                class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Projects
-                            </a>
-                            <a href="/auth/login"
-                                class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition whitespace-nowrap">
-                                Login
-                            </a>
-                            {{/if}}
                         </div>
+                        {{/if}}
 
-                        <!-- Compact Navigation for Medium Screens -->
-                        <div class="hidden sm:flex lg:hidden items-center gap-2">
-                            {{#if user}}
-                            <a href="/projects"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Projects
-                            </a>
-                            <a href="/"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Home
-                            </a>
-                            {{#if (eq user.role 'admin')}}
-                            <a href="/admin"
-                                class="px-3 py-2 text-sm font-medium text-yellow-700 hover:text-yellow-900 hover:bg-yellow-50 rounded-lg transition">
-                                Admin
-                            </a>
-                            {{/if}}
-                            <span class="text-xs text-gray-500 truncate max-w-[120px]">{{user.email}}</span>
-                            <a href="/auth/logout"
-                                class="px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition">
-                                Logout
-                            </a>
-                            {{else}}
-                            <a href="/projects"
-                                class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
-                                Projects
-                            </a>
-                            <a href="/auth/login"
-                                class="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
-                                Login
-                            </a>
-                            {{/if}}
-                        </div>
-
-                        <!-- Hamburger Menu Button (Mobile Only) -->
                         <button id="mobile-menu-toggle"
-                            class="sm:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition min-w-[44px] min-h-[44px] flex items-center justify-center"
+                            class="lg:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition min-w-[44px] min-h-[44px] flex items-center justify-center"
                             aria-label="Toggle menu">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -250,12 +154,12 @@
         </header>
 
         <!-- Mobile Menu Overlay -->
-        <div id="mobile-menu-overlay" class="mobile-menu-overlay fixed inset-0 bg-black bg-opacity-50 z-40 sm:hidden">
+        <div id="mobile-menu-overlay" class="mobile-menu-overlay fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden">
         </div>
 
         <!-- Mobile Menu -->
         <nav id="mobile-menu"
-            class="mobile-menu fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-white shadow-2xl z-50 sm:hidden overflow-y-auto">
+            class="mobile-menu fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-white shadow-2xl z-50 lg:hidden overflow-y-auto">
             <div class="flex flex-col h-full">
                 <!-- Menu Header -->
                 <div class="flex items-center justify-between p-4 border-b border-gray-200">
@@ -276,226 +180,16 @@
                 </div>
 
                 {{#if user}}
-                <!-- User Info -->
                 <div class="p-4 border-b border-gray-200 bg-gray-50">
+                    <p class="text-xs text-gray-500">{{> role-label}}</p>
                     <p class="text-sm font-semibold text-gray-900 mb-1">Signed in as</p>
                     <p class="text-sm text-gray-600 truncate">{{user.email}}</p>
                 </div>
-                {{else}}
-                <!-- Login/Register Links for logged out users -->
-                <div class="p-4 border-b border-gray-200 bg-gray-50">
-                    <p class="text-sm font-semibold text-gray-900 mb-3">Get Started</p>
-                    <div class="space-y-2">
-                        <a href="/auth/login"
-                            class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium min-h-[44px]">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1">
-                                </path>
-                            </svg>
-                            <span>Login</span>
-                        </a>
-                        <a href="{{#if user}}/events{{else}}/auth/login{{/if}}"
-                            class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg transition font-medium min-h-[44px]">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
-                                </path>
-                            </svg>
-                            <span>Register Team</span>
-                        </a>
-                    </div>
-                </div>
                 {{/if}}
 
-                <!-- Navigation Links -->
                 <div class="flex-1 overflow-y-auto">
                     <div class="p-2">
-                        <!-- Projects (Always visible) -->
-                        <a href="/projects"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Projects</span>
-                        </a>
-
-                        {{#if user}}
-                        <!-- Home -->
-                        <a href="/"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Home</span>
-                        </a>
-                        <a href="/events"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <span class="font-medium">{{#if eventSettings.id}}{{eventSettings.event_name}}{{else}}Events{{/if}}</span>
-                        </a>
-
-                        {{#if (or (eq user.role 'judge') (eq user.role 'admin'))}}
-                        <!-- Judge Queue -->
-                        <a href="/scores/judge-queue"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                            </svg>
-                            <span class="font-medium">Queue</span>
-                        </a>
-
-                        <!-- Enter Scores -->
-                        <a href="/scores/select-team?round={{currentRound}}"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Score</span>
-                        </a>
-
-                        <!-- My Scores -->
-                        <a href="/scores/my-scores"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span class="font-medium">My Scores</span>
-                        </a>
-
-                        <!-- Leaderboard -->
-                        <a href="/scores/results?round={{currentRound}}"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Leaderboard</span>
-                        </a>
-                        {{/if}}
-
-                        {{#if (eq user.role 'admin')}}
-                        <div class="border-t border-gray-200 my-2"></div>
-                        <p class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Admin</p>
-
-                        <!-- Admin Dashboard -->
-                        <a href="/admin"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                                </path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            </svg>
-                            <span class="font-medium">Admin Dashboard</span>
-                        </a>
-
-                        <a href="/admin/scores"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Scores</span>
-                        </a>
-
-                        <!-- Add User -->
-                        <a href="/admin/judges/add"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Add User</span>
-                        </a>
-
-                        <!-- Import Judges -->
-                        <a href="/admin/judges/import"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                            </svg>
-                            <span class="font-medium">Import Judges</span>
-                        </a>
-
-                        <!-- Event Settings -->
-                        <a href="/admin/settings"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                                </path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            </svg>
-                            <span class="font-medium">Event Settings</span>
-                        </a>
-
-                        <!-- Manage Tables -->
-                        <a href="/admin/tables"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Manage Tables</span>
-                        </a>
-
-                        <!-- Manage Categories -->
-                        <a href="/admin/categories"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Manage Categories</span>
-                        </a>
-                        {{/if}}
-
-                        {{#if (eq user.role 'participant')}}
-                        <!-- Participant Dashboard -->
-                        <a href="/participant"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">My Dashboard</span>
-                        </a>
-
-                        <!-- Live Scores -->
-                        <a href="/participant/scores"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <svg class="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                                </path>
-                            </svg>
-                            <span class="font-medium">Live Scores</span>
-                        </a>
-                        {{/if}}
-                        {{#if (eq user.role 'chaperone')}}
-                        <a href="/school"
-                            class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px]">
-                            <span class="font-medium">School teams</span>
-                        </a>
-                        {{/if}}
-                        {{/if}}
+                        {{> role-nav}}
                     </div>
                 </div>
 

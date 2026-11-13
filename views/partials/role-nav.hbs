@@ -1,0 +1,97 @@
+{{#if user}}
+<a href="{{#if eventSettings.slug}}/events/{{eventSettings.slug}}{{else}}/events{{/if}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    {{#if eventSettings.id}}{{eventSettings.event_name}}{{else}}Events{{/if}}
+</a>
+{{#if (eq user.role 'admin')}}
+<a href="/admin"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-yellow-700 hover:text-yellow-900 hover:bg-yellow-50 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-yellow-800 hover:bg-yellow-50 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Admin
+</a>
+<a href="/admin/scores"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Scores
+</a>
+<a href="/scores/results?round={{currentRound}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Leaderboard
+</a>
+<a href="/"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Find a table
+</a>
+{{/if}}
+{{#if (eq user.role 'judge')}}
+<a href="/scores/judge-queue"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Queue
+</a>
+<a href="/scores/select-team?round={{currentRound}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Score
+</a>
+<a href="/scores/my-scores"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    My Scores
+</a>
+<a href="/"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Find a table
+</a>
+<a href="/scores/results?round={{currentRound}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Leaderboard
+</a>
+{{/if}}
+{{#if (eq user.role 'participant')}}
+<a href="/participant"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Dashboard
+</a>
+<a href="/participant/scores"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Live Scores
+</a>
+<a href="/scores/results?round={{currentRound}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Leaderboard
+</a>
+{{/if}}
+{{#if (eq user.role 'chaperone')}}
+<a href="/school"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    School teams
+</a>
+{{#if (eq eventSettings.status 'open')}}
+<a href="/register"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Add team
+</a>
+{{/if}}
+<a href="/scores/results?round={{currentRound}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Leaderboard
+</a>
+{{/if}}
+<a href="{{projectsUrl}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Projects
+</a>
+{{else}}
+<a href="/events"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Events
+</a>
+<a href="{{projectsUrl}}"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Projects
+</a>
+<a href="/auth/login"
+    class="{{#if dense}}px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Sign in
+</a>
+<a href="{{registerUrl}}"
+    class="{{#if dense}}px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition whitespace-nowrap{{else}}flex items-center px-4 py-3 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition min-h-[44px] font-medium{{/if}}">
+    Register
+</a>
+{{/if}}

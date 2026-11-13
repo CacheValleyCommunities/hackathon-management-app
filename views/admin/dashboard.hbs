@@ -8,7 +8,7 @@
                     <p class="text-sm text-gray-500 mt-2">{{eventSettings.event_name}}</p>
                 </div>
                 <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
-                    ← Back to Home
+                    Floor map
                 </a>
             </div>
         </div>
@@ -52,94 +52,90 @@
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="mb-12">
-            <h2 class="text-2xl font-bold text-gray-900 mb-6">Quick Actions</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <a href="/admin/teams/add"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Add Team</h3>
-                    <p class="text-sm text-gray-600">Create teams without user accounts</p>
-                </a>
+        <div class="mb-12 space-y-10">
+            <section>
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">Event</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <a href="/admin/events" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">All Events</h3>
+                        <p class="text-sm text-gray-600">Create, open, or switch events</p>
+                    </a>
+                    <a href="/admin/settings" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Event Settings</h3>
+                        <p class="text-sm text-gray-600">Configure event details</p>
+                    </a>
+                    <a href="/admin/landing" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Landing Page</h3>
+                        <p class="text-sm text-gray-600">Customize the public landing page</p>
+                    </a>
+                    <a href="/admin/tables" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Tables</h3>
+                        <p class="text-sm text-gray-600">Add or remove table locations</p>
+                    </a>
+                    <a href="/admin/categories" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Categories</h3>
+                        <p class="text-sm text-gray-600">Add or remove project categories</p>
+                    </a>
+                </div>
+            </section>
 
-                <a href="/admin/judges/add"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Add User</h3>
-                    <p class="text-sm text-gray-600">Add judges, participants, or admins</p>
-                </a>
+            <section>
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">People</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <a href="/admin/teams/add" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Add Team</h3>
+                        <p class="text-sm text-gray-600">Create teams without user accounts</p>
+                    </a>
+                    <a href="/admin/judges/add" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Add User</h3>
+                        <p class="text-sm text-gray-600">Add judges, participants, or admins</p>
+                    </a>
+                    <a href="/admin/judges/import" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Import Judges</h3>
+                        <p class="text-sm text-gray-600">Bulk import from CSV file</p>
+                    </a>
+                    <a href="/admin/volunteers" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Volunteers</h3>
+                        <p class="text-sm text-gray-600">Review and approve volunteer applications</p>
+                    </a>
+                </div>
+            </section>
 
-                <a href="/admin/judges/import"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Import Judges</h3>
-                    <p class="text-sm text-gray-600">Bulk import from CSV file</p>
-                </a>
+            <section>
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">Judging</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <a href="/admin/judging/finalize" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Finalize Judging</h3>
+                        <p class="text-sm text-gray-600">Lock judging and select winners</p>
+                    </a>
+                    <a href="/admin/scores" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Scores</h3>
+                        <p class="text-sm text-gray-600">Edit scores and break ties</p>
+                    </a>
+                    <a href="/scores/results" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Leaderboard</h3>
+                        <p class="text-sm text-gray-600">View live scores</p>
+                    </a>
+                    <a href="/scores/judge-queue" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Judge Queue</h3>
+                        <p class="text-sm text-gray-600">Score the next team that still needs a judge</p>
+                    </a>
+                    <a href="/scores/select-team" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Enter Scores</h3>
+                        <p class="text-sm text-gray-600">Score teams as a judge</p>
+                    </a>
+                </div>
+            </section>
 
-                <a href="/admin/events"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">All Events</h3>
-                    <p class="text-sm text-gray-600">Create, open, or switch events</p>
-                </a>
-
-                <a href="/admin/settings"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Event Settings</h3>
-                    <p class="text-sm text-gray-600">Configure event details</p>
-                </a>
-
-                <a href="/admin/landing"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Landing Page</h3>
-                    <p class="text-sm text-gray-600">Customize the public landing page</p>
-                </a>
-
-                <a href="/admin/tables"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Tables</h3>
-                    <p class="text-sm text-gray-600">Add or remove table locations</p>
-                </a>
-
-                <a href="/admin/categories"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Categories</h3>
-                    <p class="text-sm text-gray-600">Add or remove project categories</p>
-                </a>
-
-                <a href="/admin/volunteers"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Volunteers</h3>
-                    <p class="text-sm text-gray-600">Review and approve volunteer applications</p>
-                </a>
-
-                <a href="/admin/newsletter"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Send Newsletter</h3>
-                    <p class="text-sm text-gray-600">Compose and send newsletters to user groups</p>
-                </a>
-
-                <a href="/admin/judging/finalize"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Finalize Judging</h3>
-                    <p class="text-sm text-gray-600">Lock judging and select winners</p>
-                </a>
-
-                <a href="/admin/scores"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Scores</h3>
-                    <p class="text-sm text-gray-600">Edit scores and break ties</p>
-                </a>
-
-                <a href="/scores/select-team"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Enter Scores</h3>
-                    <p class="text-sm text-gray-600">Score teams as a judge</p>
-                </a>
-
-                <a href="/scores/results"
-                    class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Leaderboard</h3>
-                    <p class="text-sm text-gray-600">View live scores</p>
-                </a>
-            </div>
+            <section>
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">Messages</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <a href="/admin/newsletter" class="block p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:shadow-sm transition">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Send Newsletter</h3>
+                        <p class="text-sm text-gray-600">Compose and send newsletters to user groups</p>
+                    </a>
+                </div>
+            </section>
         </div>
 
         <!-- Teams Section -->

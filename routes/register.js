@@ -178,6 +178,7 @@ const renderWizard = async (req, res, options = {}) => {
     categories,
     members,
     guardianEmail: draft.guardianEmail,
+    isParentInvite: !!draft.inviteToken,
     form: options.form || {}
   });
 };
@@ -258,7 +259,7 @@ router.get('/continue', async (req, res) => {
 });
 
 router.use((req, res, next) => {
-  if (!req.session.user) return res.redirect('/auth/login');
+  if (!req.session.user) return res.redirect('/auth/login?next=/register');
   next();
 });
 
@@ -284,6 +285,7 @@ router.get('/complete', (req, res) => {
     progress: null,
     canGoBack: false,
     success: result.message,
+    isParent: !!result.isParent,
     dashboardUrl: result.isSchool ? '/school' : '/participant'
   });
 });
@@ -603,7 +605,11 @@ router.post('/project', async (req, res) => {
     }
 
     delete req.session.registrationDraft;
-    req.session.registrationResult = { message: successMessage, isSchool: schoolWizard };
+    req.session.registrationResult = {
+      message: successMessage,
+      isSchool: schoolWizard,
+      isParent: !!draft.inviteToken
+    };
     return saveAndRedirect(req, res, '/register/complete');
   } catch (error) {
     console.error('Registration error:', error);

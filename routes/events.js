@@ -7,7 +7,7 @@ const { renderProjectIndex, renderProjectDetail } = require('./projects');
 const destinationForEvent = async (req, event) => {
   if (req.session.user.role === 'admin') return '/admin';
   const membership = await db.getMembership(req.session.user.id, event.id);
-  if (membership && membership.role === 'judge') return '/';
+  if (membership && membership.role === 'judge') return '/scores/judge-queue';
   if ((membership && membership.role === 'chaperone') || req.session.user.account_type === 'school') return '/school';
   if (membership && membership.role === 'participant') return '/participant';
   if (event.status === 'open') return '/register';
@@ -17,6 +17,17 @@ const destinationForEvent = async (req, event) => {
 const saveSession = (req) => new Promise((resolve, reject) => {
   req.session.save((err) => (err ? reject(err) : resolve()));
 });
+
+const focusPublicEvent = (req, res, event) => {
+  rememberEvent(req, res, event.id);
+  req.eventId = event.id;
+  req.eventSettings = event;
+  res.locals.eventSettings = event;
+  res.locals.projectsUrl = event.slug ? `/events/${event.slug}/projects` : '/projects';
+  if (!req.session.user) {
+    res.locals.homeUrl = event.slug ? `/events/${event.slug}` : '/events';
+  }
+};
 
 router.get('/', async (req, res) => {
   try {
@@ -66,6 +77,7 @@ router.get('/:slug/projects/:teamId', async (req, res) => {
   if (!event || (event.status === 'draft' && req.session.user?.role !== 'admin')) {
     return res.status(404).render('error', { message: 'Event not found.' });
   }
+  focusPublicEvent(req, res, event);
   return renderProjectDetail(req, res, event);
 });
 
@@ -74,6 +86,7 @@ router.get('/:slug/projects', async (req, res) => {
   if (!event || (event.status === 'draft' && req.session.user?.role !== 'admin')) {
     return res.status(404).render('error', { message: 'Event not found.' });
   }
+  focusPublicEvent(req, res, event);
   return renderProjectIndex(req, res, event);
 });
 
@@ -83,6 +96,7 @@ router.get('/:slug', async (req, res) => {
     if (!event || ((event.status === 'draft' || event.status === 'archived') && (!req.session.user || req.session.user.role !== 'admin'))) {
       return res.status(404).render('error', { message: 'Event not found.' });
     }
+    focusPublicEvent(req, res, event);
     res.render('landing', {
       title: event.event_name,
       eventSettings: event,

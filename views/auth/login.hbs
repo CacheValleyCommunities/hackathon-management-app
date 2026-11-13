@@ -12,6 +12,7 @@
         <!-- Login Card -->
         <div class="border border-gray-200 rounded-lg p-8">
             <form method="POST" action="/auth/login" class="space-y-6">
+                <input type="hidden" name="next" value="{{next}}">
                 {{#if error}}
                 <div class="bg-red-50 border border-red-200 rounded-lg p-4">
                     <p class="text-red-800 text-sm">{{error}}</p>
@@ -48,10 +49,14 @@
 
         <!-- Register Link -->
         <div class="mt-8 text-center">
+            {{#if (eq next "/register")}}
+            <p class="text-sm text-gray-600">After you sign in, you'll continue to team registration.</p>
+            {{else}}
             <p class="text-sm text-gray-600">
                 Need to register a team?
-                <a href="/register" class="text-gray-900 font-semibold hover:underline">Register here</a>
+                <a href="/auth/login?next=/register" class="text-gray-900 font-semibold hover:underline">Sign in to register</a>
             </p>
+            {{/if}}
         </div>
     </div>
 </div>

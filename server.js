@@ -179,6 +179,27 @@ app.use(async (req, res, next) => {
             logo_filename: null
         };
     }
+
+    const signedInUser = res.locals.user;
+    const role = signedInUser && signedInUser.role;
+    const slug = res.locals.eventSettings && res.locals.eventSettings.slug;
+    res.locals.projectsUrl = slug ? `/events/${slug}/projects` : '/projects';
+    res.locals.registerUrl = signedInUser ? '/register' : '/auth/login?next=/register';
+    if (!signedInUser) {
+        res.locals.homeUrl = slug ? `/events/${slug}` : '/events';
+    } else if (role === 'admin') {
+        res.locals.homeUrl = '/admin';
+    } else if (role === 'judge') {
+        res.locals.homeUrl = '/scores/judge-queue';
+    } else if (role === 'participant') {
+        res.locals.homeUrl = '/participant';
+    } else if (role === 'chaperone') {
+        res.locals.homeUrl = '/school';
+    } else if (req.session && req.session.registrationDraft && req.session.registrationDraft.step === 'parent-sent') {
+        res.locals.homeUrl = '/register';
+    } else {
+        res.locals.homeUrl = '/events';
+    }
     next();
 });
 

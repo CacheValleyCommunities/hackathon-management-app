@@ -150,6 +150,14 @@ router.get('/', requireParticipant, async (req, res) => {
       });
     }
 
+    const userRecord = await db.getUserByEmail(req.session.user.email);
+    const isParentContact = !!(userRecord
+      && (userRecord.is_under_18 === 1 || userRecord.is_under_18 === true)
+      && userRecord.guardian_email
+      && userRecord.guardian_email.toLowerCase() === String(userRecord.email || '').toLowerCase());
+    const projectUrl = req.eventSettings && req.eventSettings.slug
+      ? `/events/${req.eventSettings.slug}/projects/${team.id}`
+      : `/projects/${team.id}`;
     const currentRound = (req.eventSettings && req.eventSettings.current_round) || req.session.currentRound || 1;
     const allScores = await db.getJudgeScores(req.eventId, null, null, team.table_name);
     const teamScores = allScores.filter(s => s.team_name === team.name && s.round <= currentRound);
@@ -182,6 +190,8 @@ router.get('/', requireParticipant, async (req, res) => {
       currentRound,
       judgeCount: uniqueJudges.size,
       roundsCompleted: roundsCompleted.size,
+      isParentContact,
+      projectUrl,
       query: req.query
     });
   } catch (error) {
