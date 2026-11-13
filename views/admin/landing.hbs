@@ -84,19 +84,30 @@
                     </div>
                 </div>
 
-                <!-- Landing Page Content Section -->
+                <!-- About this event -->
                 <div>
-                    <h2 class="text-xl font-semibold text-gray-900 mb-4">Landing Page Content</h2>
-                    <div>
-                        <label for="landingPageContent" class="block text-sm font-semibold text-gray-700 mb-2">
-                            Content
-                        </label>
-                        <textarea id="landingPageContent" 
-                                  name="landingPageContent" 
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">About this event</h2>
+                    <div id="aboutDrop" class="rounded-lg border border-dashed border-gray-300 p-4 transition">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                            <label for="landingPageContent" class="block text-sm font-semibold text-gray-700">
+                                Markdown
+                            </label>
+                            <label class="inline-flex items-center px-3 py-2 text-sm font-semibold text-gray-700 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                                Choose a markdown file
+                                <input id="aboutFile" type="file" accept=".md,.markdown,text/markdown,text/plain" class="sr-only">
+                            </label>
+                        </div>
+                        <p id="aboutError" class="hidden mb-3 text-sm text-red-700" role="alert"></p>
+                        <textarea id="landingPageContent"
+                                  name="landingPageContent"
                                   rows="12"
-                                  placeholder="Enter the main content for your landing page. This will appear below the hero banner. You can use line breaks for paragraphs."
-                                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition font-sans">{{settings.landing_page_content}}</textarea>
-                        <p class="text-xs text-gray-500 mt-2">Main content displayed on the landing page. Line breaks will be preserved.</p>
+                                  placeholder="Drop a .md file here, or write markdown. This is the description visitors read below the banner."
+                                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition font-mono text-sm">{{settings.landing_page_content}}</textarea>
+                        <p class="text-xs text-gray-500 mt-2">Drop a .md or .markdown file onto this box to replace the description. Files over 100KB are ignored.</p>
+                    </div>
+                    <div class="mt-6">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-2">How visitors will see it</h3>
+                        <div id="aboutPreview" class="prose max-w-none rounded-lg border border-gray-200 bg-gray-50 p-6 min-h-[8rem]"></div>
                     </div>
                 </div>
 
@@ -127,4 +138,98 @@
         </div>
     </div>
 </div>
+
+{{> prose-styles}}
+<script src="https://cdn.jsdelivr.net/npm/marked@17.0.0/lib/marked.umd.js"></script>
+<script>
+    (function () {
+        var MAX_BYTES = 100 * 1024;
+        var textarea = document.getElementById('landingPageContent');
+        var preview = document.getElementById('aboutPreview');
+        var errorEl = document.getElementById('aboutError');
+        var drop = document.getElementById('aboutDrop');
+        var fileInput = document.getElementById('aboutFile');
+        if (!textarea || !preview || !drop || !fileInput) return;
+
+        var showError = function (message) {
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        };
+
+        var clearError = function () {
+            errorEl.textContent = '';
+            errorEl.classList.add('hidden');
+        };
+
+        var renderPreview = function () {
+            var source = textarea.value || '';
+            if (!source.trim()) {
+                preview.innerHTML = '<p class="text-gray-400">Nothing to preview yet.</p>';
+                return;
+            }
+            var parser = window.marked && (window.marked.parse || window.marked.marked);
+            if (typeof parser !== 'function') {
+                preview.textContent = source;
+                return;
+            }
+            preview.innerHTML = parser(source, { breaks: true, gfm: true });
+        };
+
+        var isMarkdownFile = function (file) {
+            var name = String(file && file.name || '').toLowerCase();
+            return name.endsWith('.md') || name.endsWith('.markdown');
+        };
+
+        var applyFile = function (file) {
+            clearError();
+            if (!file) return;
+            if (!isMarkdownFile(file)) {
+                showError('Drop a .md or .markdown file.');
+                return;
+            }
+            if (file.size > MAX_BYTES) {
+                showError('That file is larger than 100KB.');
+                return;
+            }
+            if (textarea.value.trim() && !window.confirm('Replace the current about text with this file?')) {
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function () {
+                textarea.value = typeof reader.result === 'string' ? reader.result : '';
+                renderPreview();
+            };
+            reader.onerror = function () {
+                showError('Could not read that file.');
+            };
+            reader.readAsText(file);
+        };
+
+        textarea.addEventListener('input', renderPreview);
+        fileInput.addEventListener('change', function () {
+            applyFile(fileInput.files && fileInput.files[0]);
+            fileInput.value = '';
+        });
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+            drop.addEventListener(eventName, function (event) {
+                event.preventDefault();
+                drop.classList.add('ring-2', 'ring-gray-900', 'bg-gray-50');
+            });
+        });
+        ['dragleave', 'drop'].forEach(function (eventName) {
+            drop.addEventListener(eventName, function (event) {
+                event.preventDefault();
+                if (eventName === 'dragleave' && drop.contains(event.relatedTarget)) return;
+                drop.classList.remove('ring-2', 'ring-gray-900', 'bg-gray-50');
+            });
+        });
+        drop.addEventListener('drop', function (event) {
+            var files = event.dataTransfer && event.dataTransfer.files;
+            applyFile(files && files[0]);
+        });
+
+        renderPreview();
+    })();
+</script>
 

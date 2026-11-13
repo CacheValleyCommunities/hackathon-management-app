@@ -1,430 +1,294 @@
 <div class="min-h-screen bg-white flex items-center justify-center px-4 py-12">
     <div class="max-w-2xl w-full">
-        <!-- Header -->
         <div class="text-center mb-12">
             {{#if eventSettings.logo_filename}}
-            <img src="/uploads/{{eventSettings.logo_filename}}" alt="{{eventSettings.event_name}}"
-                class="max-h-20 mx-auto mb-6">
+            <img src="/uploads/{{eventSettings.logo_filename}}" alt="{{eventSettings.event_name}}" class="max-h-20 mx-auto mb-6">
             {{/if}}
-            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-2">{{#if isSchool}}School team registration{{else}}Team Registration{{/if}}</h1>
-            <p class="text-sm text-gray-500 mb-4">{{eventSettings.event_name}}</p>
-            <a href="/auth/login" class="text-sm text-gray-600 hover:text-gray-900 transition">
-                ← Back to Sign In
-            </a>
+            <p class="text-sm text-gray-500 mb-2">Team registration</p>
+            {{#if progress}}
+            <p class="text-xs uppercase tracking-wide text-gray-400">Step {{progress.current}} of {{progress.total}} · {{progress.label}}</p>
+            {{/if}}
         </div>
 
-        <!-- Registration Card -->
         <div class="border border-gray-200 rounded-lg p-8">
             {{#if error}}
             <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded">
-                <div class="flex">
-                    <div class="flex-shrink-0">
-                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                                clip-rule="evenodd" />
-                        </svg>
-                    </div>
-                    <div class="ml-3">
-                        <p class="text-sm text-red-800 font-medium">{{error}}</p>
-                    </div>
-                </div>
+                <p class="text-sm text-red-800 font-medium">{{error}}</p>
             </div>
             {{/if}}
 
-            <form method="POST" action="/register" class="space-y-6">
-                <!-- Team Name -->
+            {{#if (eq step "done")}}
+            <div class="bg-green-50 border-l-4 border-green-400 p-4 rounded">
+                <p class="text-sm text-green-800 font-medium">{{success}}</p>
+            </div>
+            <a href="{{dashboardUrl}}" class="mt-6 inline-flex w-full justify-center px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
+                Go to your dashboard
+            </a>
+            {{/if}}
+
+            {{#if (eq step "event")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Which event?</h1>
+            <p class="text-sm text-gray-600 mb-6">Choose the event this team is registering for.</p>
+            {{#if events.length}}
+            <form method="POST" action="/register/event" class="space-y-3">
+                {{#each events}}
+                <label class="flex items-start gap-3 border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-gray-400">
+                    <input type="radio" name="eventId" value="{{this.id}}" class="mt-1" {{#if (eq this.id ../selectedEventId)}}checked{{/if}} required>
+                    <span>
+                        <span class="block text-sm font-semibold text-gray-900">{{this.event_name}}</span>
+                        <span class="block text-xs text-gray-500 mt-1">
+                            {{#if this.event_dates_text}}{{this.event_dates_text}}{{else if this.start_date}}{{this.start_date}}{{#if this.end_date}} — {{this.end_date}}{{/if}}{{else}}Dates to be announced{{/if}}
+                        </span>
+                    </span>
+                </label>
+                {{/each}}
+                {{#if isSchool}}
+                <p class="text-xs text-gray-500">You'll add the project next. Student names, emails, and ages are not collected.</p>
+                {{/if}}
+                <button type="submit" class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">Continue</button>
+            </form>
+            {{else}}
+            <p class="text-sm text-gray-600">No events are open for registration.</p>
+            {{/if}}
+            {{/if}}
+
+            {{#if (eq step "school")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Are you part of a school?</h1>
+            <p class="text-sm text-gray-600 mb-6">{{#if eventName}}Registering for {{eventName}}.{{/if}} School teams are registered by a chaperone.</p>
+            <form method="POST" action="/register/school" class="space-y-3">
+                <button type="submit" name="belongsToSchool" value="no" class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">No, I'm registering on my own</button>
+                <button type="submit" name="belongsToSchool" value="yes" class="w-full px-6 py-4 bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 rounded-lg font-semibold transition">Yes, I'm part of a school</button>
+            </form>
+            {{/if}}
+
+            {{#if (eq step "chaperone")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Ask your chaperone</h1>
+            <p class="text-sm text-gray-700 mb-4">School teams are registered by a chaperone using the school account. Student names, emails, and ages are not collected here.</p>
+            <p class="text-sm text-gray-700 mb-6">If you are the chaperone, sign in with the school account and add the team.</p>
+            <a href="/auth/login" class="inline-flex w-full justify-center px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">School sign in</a>
+            {{/if}}
+
+            {{#if (eq step "age")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Are you under 18?</h1>
+            <p class="text-sm text-gray-600 mb-6">Participants under 18 need a parent to finish signup.</p>
+            <form method="POST" action="/register/age" class="space-y-3">
+                <button type="submit" name="isUnder18" value="no" class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">No, I'm 18 or older</button>
+                <button type="submit" name="isUnder18" value="yes" class="w-full px-6 py-4 bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 rounded-lg font-semibold transition">Yes, I'm under 18</button>
+            </form>
+            {{/if}}
+
+            {{#if (eq step "parent")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Email a parent</h1>
+            <p class="text-sm text-gray-600 mb-6">We'll send them a link to add the team and project. The team is not registered until they finish.</p>
+            <form method="POST" action="/register/parent" class="space-y-6">
                 <div>
-                    <label for="teamName" class="block text-sm font-semibold text-gray-700 mb-2">
-                        Team Name <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" id="teamName" name="teamName" required autofocus placeholder="e.g., Team Awesome"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                    <label for="guardianEmail" class="block text-sm font-semibold text-gray-700 mb-2">Parent email <span class="text-red-500">*</span></label>
+                    <input type="email" id="guardianEmail" name="guardianEmail" required value="{{guardianEmail}}" placeholder="parent@example.com" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                </div>
+                <button type="submit" class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">Email my parent</button>
+            </form>
+            {{/if}}
+
+            {{#if (eq step "parent-sent")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Check the parent's email</h1>
+            <div class="bg-green-50 border-l-4 border-green-400 p-4 rounded">
+                <p class="text-sm text-green-800 font-medium">We emailed {{guardianEmail}}. They need to open the link and finish signup before the team is registered.</p>
+            </div>
+            {{/if}}
+
+            {{#if (eq step "members")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Team member contacts</h1>
+            <p class="text-sm text-gray-600 mb-6">Add a name and email for each person on the team.{{#if eventName}} Registering for {{eventName}}.{{/if}}</p>
+            <form method="POST" action="/register/members" class="space-y-6">
+                <div id="memberRows" class="space-y-3">
+                    {{#each members}}
+                    <div class="member-row grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                        <input type="text" name="memberName" value="{{memberName this}}" placeholder="Name" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                        <input type="email" name="memberEmail" value="{{memberEmail this}}" placeholder="Email" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                        <button type="button" onclick="removeMember(this)" class="px-4 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium">Remove</button>
+                    </div>
+                    {{/each}}
+                </div>
+                <button type="button" onclick="addMember()" class="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium">Add member</button>
+                <button type="submit" class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">Continue</button>
+            </form>
+            {{/if}}
+
+            {{#if (eq step "project")}}
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-2">Project info</h1>
+            <p class="text-sm text-gray-600 mb-6">{{#if eventName}}{{eventName}}. {{/if}}{{#if isSchool}}This team is registered with your chaperone email. Student names, emails, and ages are not collected.{{else}}Tell us about the project.{{/if}}</p>
+            <form method="POST" action="/register/project" class="space-y-6">
+                <div>
+                    <label for="teamName" class="block text-sm font-semibold text-gray-700 mb-2">Team Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="teamName" name="teamName" required value="{{form.teamName}}" placeholder="e.g., Team Awesome" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
                 </div>
 
-                <!-- Table Name & Category (Side by Side) -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Table Name -->
                     <div>
-                        <label for="tableName" class="block text-sm font-semibold text-gray-700 mb-2">
-                            Table Location <span class="text-red-500">*</span>
-                        </label>
+                        <label for="tableSearch" class="block text-sm font-semibold text-gray-700 mb-2">Table Location <span class="text-red-500">*</span></label>
                         <div class="relative">
-                            <input type="text" id="tableSearch" placeholder="Type to search tables..."
-                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"
-                                onkeyup="filterTables()" onfocus="showTableDropdown()" autocomplete="off">
-                            <input type="hidden" id="tableName" name="tableName" required>
-                            <div id="tableDropdown"
-                                class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            <input type="text" id="tableSearch" value="{{form.tableName}}" placeholder="Type to search tables..." class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition" onkeyup="filterTables()" onfocus="showTableDropdown()" autocomplete="off">
+                            <input type="hidden" id="tableName" name="tableName" value="{{form.tableName}}" required>
+                            <div id="tableDropdown" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                                 {{#each tables}}
-                                <div class="table-option px-4 py-2 cursor-pointer hover:bg-gray-50"
-                                    data-table="{{this}}" onclick="selectTable('{{this}}')">
-                                    {{this}}
-                                </div>
+                                <div class="table-option px-4 py-2 cursor-pointer hover:bg-gray-50" data-table="{{this}}" onclick="selectTable('{{this}}')">{{this}}</div>
                                 {{/each}}
                             </div>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2">
-                            Chess board style (A1-P10)
-                        </p>
+                        <p class="text-xs text-gray-500 mt-2">Chess board style (A1-P10)</p>
                     </div>
-
-                    <!-- Category -->
                     <div>
-                        <label for="categoryId" class="block text-sm font-semibold text-gray-700 mb-2">
-                            Category <span class="text-red-500">*</span>
-                        </label>
-                        <select id="categoryId" name="categoryId" required
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
-                            <option value="" disabled selected>Select Category</option>
-                            {{#if categories.length}}
-                                {{#each categories}}
-                                <option value="{{this.id}}">{{this.name}}</option>
-                                {{/each}}
-                            {{else}}
-                                <option value="" disabled>No categories available</option>
-                            {{/if}}
+                        <label for="categoryId" class="block text-sm font-semibold text-gray-700 mb-2">Category <span class="text-red-500">*</span></label>
+                        <select id="categoryId" name="categoryId" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                            <option value="" disabled {{#unless form.categoryId}}selected{{/unless}}>Select Category</option>
+                            {{#each categories}}
+                            <option value="{{this.id}}" {{#if (eq this.id ../form.categoryId)}}selected{{/if}}>{{this.name}}</option>
+                            {{/each}}
                         </select>
                         {{#unless categories.length}}
-                        <p class="text-xs text-red-500 mt-2">
-                            Categories must be added by administrators before registration
-                        </p>
+                        <p class="text-xs text-red-500 mt-2">Categories must be added by administrators before registration</p>
                         {{/unless}}
                     </div>
                 </div>
 
-                <!-- Division (if exists) -->
                 {{#if divisions.length}}
                 <div>
-                    <label for="division" class="block text-sm font-semibold text-gray-700 mb-2">
-                        Division <span class="text-red-500">*</span>
-                    </label>
-                    <select id="division" name="division" required
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
-                        <option value="" disabled selected>Select Division</option>
+                    <label for="division" class="block text-sm font-semibold text-gray-700 mb-2">Division <span class="text-red-500">*</span></label>
+                    <select id="division" name="division" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                        <option value="" disabled {{#unless form.division}}selected{{/unless}}>Select Division</option>
                         {{#each divisions}}
-                        <option value="{{this}}">{{this}}</option>
+                        <option value="{{this}}" {{#if (eq this ../form.division)}}selected{{/if}}>{{this}}</option>
                         {{/each}}
                     </select>
                 </div>
                 {{/if}}
 
-                <!-- Project Name -->
                 <div>
-                    <label for="projectName" class="block text-sm font-semibold text-gray-700 mb-2">
-                        Project Name <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" id="projectName" name="projectName" required
-                        placeholder="e.g., AI-Powered Solution"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                    <label for="projectName" class="block text-sm font-semibold text-gray-700 mb-2">Project Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="projectName" name="projectName" required value="{{form.projectName}}" placeholder="e.g., AI-Powered Solution" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
                 </div>
+
+                {{#if isSchool}}
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Chaperone email</label>
+                    <input type="email" value="{{user.email}}" readonly class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600">
+                </div>
+                {{/if}}
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {{#unless isSchool}}
                     <div>
-                        <label for="contactEmail" class="block text-sm font-semibold text-gray-700 mb-2">
-                            Contact Email <span id="contactEmailRequired" class="text-red-500">*</span>
-                        </label>
-                        <input type="email" id="contactEmail" name="contactEmail" required
-                            placeholder="team@example.com"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
-                        <p id="contactEmailNote" class="text-xs text-gray-500 mt-2 hidden">Optional for participants
-                            under 18 and only with consent of guardian</p>
+                        <label for="websiteLink" class="block text-sm font-semibold text-gray-700 mb-2">Website / Demo Link</label>
+                        <input type="url" id="websiteLink" name="websiteLink" value="{{form.websiteLink}}" placeholder="https://your-project.com" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
                     </div>
-                    {{else}}
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Chaperone email</label>
-                        <input type="email" value="{{user.email}}" readonly
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600">
-                        <p class="text-xs text-gray-500 mt-2">Student names, emails, and ages are not collected.</p>
-                    </div>
-                    {{/unless}}
-
-                    <div>
-                        <label for="websiteLink" class="block text-sm font-semibold text-gray-700 mb-2">
-                            Website / Demo Link
-                        </label>
-                        <input type="url" id="websiteLink" name="websiteLink" placeholder="https://your-project.com"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+                        <label for="githubLink" class="block text-sm font-semibold text-gray-700 mb-2">GitHub Repository</label>
+                        <input type="url" id="githubLink" name="githubLink" value="{{form.githubLink}}" placeholder="https://github.com/..." class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
                     </div>
                 </div>
 
-                <div>
-                    <label for="githubLink" class="block text-sm font-semibold text-gray-700 mb-2">
-                        GitHub Repository
-                    </label>
-                    <input type="url" id="githubLink" name="githubLink" placeholder="https://github.com/..."
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
-                </div>
-
-                {{#unless isSchool}}
-                <div>
-                    <label for="teamMembers" class="block text-sm font-semibold text-gray-700 mb-2">
-                        Team Members
-                    </label>
-                    <textarea id="teamMembers" name="teamMembers" rows="3"
-                        placeholder="Enter team member names, one per line or comma-separated"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition"></textarea>
-                    <p class="text-xs text-gray-500 mt-2">You can add or edit team members later from your dashboard</p>
-                </div>
-
-                <div class="border-t border-gray-200 pt-6">
-                    <div class="mb-4">
-                        <label class="flex items-start gap-3 cursor-pointer">
-                            <input type="checkbox" id="isUnder18" name="isUnder18" value="1"
-                                class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                onchange="toggleGuardianEmail()">
-                            <div>
-                                <span class="text-sm font-semibold text-gray-700">I am under 18 years of age</span>
-                                <p class="text-xs text-gray-500 mt-1">Guardian email is required for participants under
-                                    18</p>
-                            </div>
-                        </label>
-                    </div>
-                    <div id="guardianEmailSection" class="hidden">
-                        <label for="guardianEmail" class="block text-sm font-semibold text-gray-700 mb-2">
-                            Guardian Email <span class="text-red-500">*</span>
-                        </label>
-                        <input type="email" id="guardianEmail" name="guardianEmail" placeholder="guardian@example.com"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
-                        <p class="text-xs text-amber-700 mt-2">The guardian must log in to complete setup and is responsible for the information entered.</p>
-                    </div>
-                </div>
-                {{/unless}}
-
-                <!-- Policy Acceptance -->
-                <div class="border-t border-gray-200 pt-6 space-y-4">
-                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Required Agreements</h3>
-
-                    <div class="space-y-3">
-                        <label class="flex items-start gap-3 cursor-pointer">
-                            <input type="checkbox" id="privacyPolicyAccepted" name="privacyPolicyAccepted" value="1"
-                                required class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                            <div>
-                                <span class="text-sm font-semibold text-gray-700">
-                                    I accept the <a href="/policies/privacy" target="_blank"
-                                        class="text-blue-600 hover:text-blue-800 underline">Privacy Policy</a>
-                                    <span class="text-red-500">*</span>
-                                </span>
-                            </div>
-                        </label>
-
-                        <label class="flex items-start gap-3 cursor-pointer">
-                            <input type="checkbox" id="termsAccepted" name="termsAccepted" value="1" required
-                                class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                            <div>
-                                <span class="text-sm font-semibold text-gray-700">
-                                    I accept the <a href="/policies/terms" target="_blank"
-                                        class="text-blue-600 hover:text-blue-800 underline">Terms of Use</a>
-                                    <span class="text-red-500">*</span>
-                                </span>
-                            </div>
-                        </label>
-
-                        <label class="flex items-start gap-3 cursor-pointer">
-                            <input type="checkbox" id="acceptableUseAccepted" name="acceptableUseAccepted" value="1"
-                                required class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                            <div>
-                                <span class="text-sm font-semibold text-gray-700">
-                                    I accept the <a href="/policies/acceptable-use" target="_blank"
-                                        class="text-blue-600 hover:text-blue-800 underline">Acceptable Use Policy</a>
-                                    <span class="text-red-500">*</span>
-                                </span>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Email Preferences -->
-                <div class="border-t border-gray-200 pt-6">
+                <div class="border-t border-gray-200 pt-6 space-y-3">
+                    <h2 class="text-sm font-semibold text-gray-900">Required Agreements</h2>
                     <label class="flex items-start gap-3 cursor-pointer">
-                        <input type="checkbox" id="emailPreferences" name="emailPreferences" value="1"
-                            class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                        <div>
-                            <span class="text-sm font-semibold text-gray-700">Email Preferences</span>
-                            <p class="text-xs text-gray-500 mt-1">I would like to receive emails about future code-camp
-                                events and other code-related content</p>
-                        </div>
+                        <input type="checkbox" name="privacyPolicyAccepted" value="1" required {{#if form.privacyPolicyAccepted}}checked{{/if}} class="mt-1 w-4 h-4 text-gray-900 border-gray-300 rounded">
+                        <span class="text-sm font-semibold text-gray-700">I accept the <a href="/policies/privacy" target="_blank" class="underline">Privacy Policy</a> <span class="text-red-500">*</span></span>
+                    </label>
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="termsAccepted" value="1" required {{#if form.termsAccepted}}checked{{/if}} class="mt-1 w-4 h-4 text-gray-900 border-gray-300 rounded">
+                        <span class="text-sm font-semibold text-gray-700">I accept the <a href="/policies/terms" target="_blank" class="underline">Terms of Use</a> <span class="text-red-500">*</span></span>
+                    </label>
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="acceptableUseAccepted" value="1" required {{#if form.acceptableUseAccepted}}checked{{/if}} class="mt-1 w-4 h-4 text-gray-900 border-gray-300 rounded">
+                        <span class="text-sm font-semibold text-gray-700">I accept the <a href="/policies/acceptable-use" target="_blank" class="underline">Acceptable Use Policy</a> <span class="text-red-500">*</span></span>
                     </label>
                 </div>
 
-                <!-- Data Privacy Notice -->
+                <label class="flex items-start gap-3 cursor-pointer border-t border-gray-200 pt-6">
+                    <input type="checkbox" name="emailPreferences" value="1" {{#if form.emailPreferences}}checked{{/if}} class="mt-1 w-4 h-4 text-gray-900 border-gray-300 rounded">
+                    <span>
+                        <span class="block text-sm font-semibold text-gray-700">Email Preferences</span>
+                        <span class="block text-xs text-gray-500 mt-1">I would like to receive emails about future code-camp events and other code-related content</span>
+                    </span>
+                </label>
+
                 <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p class="text-xs text-gray-700">
-                        <strong>Data Privacy:</strong> We do not sell your personal data or share it with third parties.
-                        Your information is used solely for event management and communication purposes.
-                        See our <a href="/policies/privacy" target="_blank"
-                            class="text-blue-600 hover:text-blue-800 underline">Privacy Policy</a> for more details.
-                    </p>
+                    <p class="text-xs text-gray-700"><strong>Data Privacy:</strong> We do not sell your personal data or share it with third parties. Your information is used solely for event management and communication. See our <a href="/policies/privacy" target="_blank" class="underline">Privacy Policy</a>.</p>
                 </div>
 
-                <!-- Submit Button -->
-                <button type="submit"
-                    class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">
-                    Register Team
-                </button>
+                <button type="submit" class="w-full px-6 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-semibold transition">Register Team</button>
             </form>
+            {{/if}}
 
-            <!-- Footer Info -->
-            <div class="mt-6 pt-6 border-t border-gray-200">
-                <p class="text-center text-sm text-gray-500">
-                    <span class="text-red-500">*</span> Required fields
-                </p>
-            </div>
-        </div>
-
-        <!-- Success Message with Guardian Notice -->
-        {{#if success}}
-        <div class="mt-6 bg-green-50 border-l-4 border-green-400 p-4 rounded">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd"
-                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                            clip-rule="evenodd" />
-                    </svg>
-                </div>
-                <div class="ml-3">
-                    <p class="text-sm text-green-800 font-medium">{{success}}</p>
-                    {{#if isUnder18}}
-                    <div class="mt-3 bg-amber-50 border border-amber-200 rounded p-3">
-                        <p class="text-xs text-amber-800 font-semibold mb-1">⚠️ Important: Guardian Action Required</p>
-                        <p class="text-xs text-amber-700">
-                            The guardian email ({{guardianEmail}}) has been notified and must log in to complete the
-                            team setup.
-                            <strong>The guardian is the sole legal entity responsible</strong> for verifying and
-                            approving all information entered into the platform.
-                        </p>
-                    </div>
-                    {{/if}}
-                </div>
-            </div>
-        </div>
-        {{/if}}
-
-        <!-- Additional Info -->
-        <div class="mt-8 text-center">
-            <p class="text-sm text-gray-600">
-                Already registered?
-                <a href="/auth/login" class="text-gray-900 font-semibold hover:underline">Sign in here</a>
-            </p>
+            {{#if canGoBack}}
+            <form method="POST" action="/register/back" class="mt-4">
+                <button type="submit" class="w-full px-6 py-3 text-sm font-semibold text-gray-700 hover:text-gray-900">Back</button>
+            </form>
+            {{/if}}
         </div>
     </div>
 </div>
 
 <script>
     function selectTable(tableName) {
-        document.getElementById('tableSearch').value = tableName;
-        document.getElementById('tableName').value = tableName;
-        document.getElementById('tableDropdown').classList.add('hidden');
+        const search = document.getElementById('tableSearch');
+        const hidden = document.getElementById('tableName');
+        const dropdown = document.getElementById('tableDropdown');
+        if (!search || !hidden || !dropdown) return;
+        search.value = tableName;
+        hidden.value = tableName;
+        dropdown.classList.add('hidden');
     }
 
     function showTableDropdown() {
-        document.getElementById('tableDropdown').classList.remove('hidden');
+        const dropdown = document.getElementById('tableDropdown');
+        if (dropdown) dropdown.classList.remove('hidden');
     }
 
     function filterTables() {
         const input = document.getElementById('tableSearch');
-        const filter = input.value.toUpperCase();
         const dropdown = document.getElementById('tableDropdown');
+        if (!input || !dropdown) return;
+        const filter = input.value.toUpperCase();
         const options = dropdown.getElementsByClassName('table-option');
-
         let hasVisibleOptions = false;
         for (let i = 0; i < options.length; i++) {
             const txtValue = options[i].textContent || options[i].innerText;
-            if (txtValue.toUpperCase().indexOf(filter) > -1) {
-                options[i].style.display = "";
-                hasVisibleOptions = true;
-            } else {
-                options[i].style.display = "none";
-            }
+            const visible = txtValue.toUpperCase().indexOf(filter) > -1;
+            options[i].style.display = visible ? '' : 'none';
+            if (visible) hasVisibleOptions = true;
         }
-
-        if (hasVisibleOptions) {
-            dropdown.classList.remove('hidden');
-        } else {
-            dropdown.classList.add('hidden');
-        }
+        dropdown.classList.toggle('hidden', !hasVisibleOptions);
+        const hidden = document.getElementById('tableName');
+        if (hidden) hidden.value = input.value.trim();
     }
 
-    // Close dropdown when clicking outside
     document.addEventListener('click', function (event) {
         const dropdown = document.getElementById('tableDropdown');
         const searchInput = document.getElementById('tableSearch');
+        if (!dropdown || !searchInput) return;
         if (!dropdown.contains(event.target) && event.target !== searchInput) {
             dropdown.classList.add('hidden');
         }
     });
 
-    // Toggle guardian email field based on age
-    function toggleGuardianEmail() {
-        const isUnder18 = document.getElementById('isUnder18').checked;
-        const guardianSection = document.getElementById('guardianEmailSection');
-        const guardianEmail = document.getElementById('guardianEmail');
-        const contactEmail = document.getElementById('contactEmail');
-        const contactEmailRequired = document.getElementById('contactEmailRequired');
-        const contactEmailNote = document.getElementById('contactEmailNote');
-
-        if (isUnder18) {
-            guardianSection.classList.remove('hidden');
-            guardianEmail.setAttribute('required', 'required');
-            // Make contact email optional for under 18
-            contactEmail.removeAttribute('required');
-            contactEmailRequired.classList.add('hidden');
-            contactEmailNote.classList.remove('hidden');
-        } else {
-            guardianSection.classList.add('hidden');
-            guardianEmail.removeAttribute('required');
-            guardianEmail.value = '';
-            // Make contact email required for 18+
-            contactEmail.setAttribute('required', 'required');
-            contactEmailRequired.classList.remove('hidden');
-            contactEmailNote.classList.add('hidden');
-        }
+    function addMember() {
+        const container = document.getElementById('memberRows');
+        if (!container) return;
+        const row = document.createElement('div');
+        row.className = 'member-row grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2';
+        row.innerHTML = `
+            <input type="text" name="memberName" placeholder="Name" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+            <input type="email" name="memberEmail" placeholder="Email" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition">
+            <button type="button" class="px-4 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium">Remove</button>
+        `;
+        row.querySelector('button').addEventListener('click', function () {
+            removeMember(this);
+        });
+        container.appendChild(row);
     }
 
-    // Validate form before submission
-    document.querySelector('form').addEventListener('submit', function (e) {
-        const isUnder18 = document.getElementById('isUnder18').checked;
-        const guardianEmail = document.getElementById('guardianEmail').value;
-        const contactEmail = document.getElementById('contactEmail').value;
-        const categoryId = document.getElementById('categoryId').value;
-
-        // Validate category is selected
-        if (!categoryId || categoryId === '') {
-            e.preventDefault();
-            alert('Please select a category for your team.');
-            document.getElementById('categoryId').focus();
-            return false;
-        }
-
-        // Validate division is selected (if divisions exist)
-        const divisionSelect = document.getElementById('division');
-        if (divisionSelect && !divisionSelect.disabled) {
-            const division = divisionSelect.value;
-            if (!division || division === '') {
-                e.preventDefault();
-                alert('Please select a division for your team.');
-                divisionSelect.focus();
-                return false;
-            }
-        }
-
-        // For under 18, guardian email is required
-        if (isUnder18 && !guardianEmail) {
-            e.preventDefault();
-            alert('Guardian email is required for participants under 18 years of age.');
-            document.getElementById('guardianEmailSection').classList.remove('hidden');
-            document.getElementById('guardianEmail').focus();
-            return false;
-        }
-
-        // For 18+, contact email is required
-        if (!isUnder18 && !contactEmail) {
-            e.preventDefault();
-            alert('Contact email is required for participants 18 years of age or older.');
-            document.getElementById('contactEmail').focus();
-            return false;
-        }
-    });
+    function removeMember(button) {
+        const container = document.getElementById('memberRows');
+        if (!container || container.children.length <= 1) return;
+        button.parentElement.remove();
+    }
 </script>

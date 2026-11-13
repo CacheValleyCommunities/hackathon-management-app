@@ -151,6 +151,24 @@ const createTables = () => {
         }
       });
 
+      db.run(`CREATE TABLE IF NOT EXISTS registration_invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        event_id INTEGER NOT NULL,
+        guardian_email TEXT NOT NULL,
+        invited_by_user_id INTEGER,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (event_id) REFERENCES event_settings(id),
+        FOREIGN KEY (invited_by_user_id) REFERENCES users(id)
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating registration_invites table:', err);
+          reject(err);
+        }
+      });
+
       // Tables table (stores table names)
       db.run(`CREATE TABLE IF NOT EXISTS tables (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -694,6 +712,62 @@ const markTokenAsUsed = (token) => {
     db.run('UPDATE magic_tokens SET used = 1 WHERE token = ?', [token], (err) => {
       if (err) reject(err);
       else resolve();
+    });
+  });
+};
+
+const createRegistrationInvite = ({ eventId, guardianEmail, invitedByUserId }) => {
+  return new Promise((resolve, reject) => {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const email = guardianEmail.toLowerCase().trim();
+    db.run(
+      `INSERT INTO registration_invites (token, event_id, guardian_email, invited_by_user_id, expires_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [token, eventId, email, invitedByUserId || null, expiresAt],
+      function (err) {
+        if (err) reject(err);
+        else resolve({
+          id: this.lastID,
+          token,
+          event_id: eventId,
+          guardian_email: email,
+          invited_by_user_id: invitedByUserId || null,
+          expires_at: expiresAt,
+          used_at: null
+        });
+      }
+    );
+  });
+};
+
+const getRegistrationInvite = (token) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM registration_invites WHERE token = ?', [token], (err, row) => {
+      if (err) reject(err);
+      else resolve(row || null);
+    });
+  });
+};
+
+const markRegistrationInviteUsed = (token) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE registration_invites SET used_at = ? WHERE token = ? AND used_at IS NULL`,
+      [new Date().toISOString(), token],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ updated: this.changes > 0 });
+      }
+    );
+  });
+};
+
+const deleteRegistrationInvite = (token) => {
+  return new Promise((resolve, reject) => {
+    db.run('DELETE FROM registration_invites WHERE token = ? AND used_at IS NULL', [token], function (err) {
+      if (err) reject(err);
+      else resolve({ deleted: this.changes > 0 });
     });
   });
 };
@@ -1400,6 +1474,25 @@ const createEvent = async (data) => {
   });
 };
 
+const renameEvent = (eventId, eventName) => {
+  const name = String(eventName || '').trim();
+  return new Promise((resolve, reject) => {
+    if (!name) {
+      reject(new Error('Name is required'));
+      return;
+    }
+    db.run(
+      `UPDATE event_settings SET event_name = ?, updated_at = datetime("now") WHERE id = ?`,
+      [name, eventId],
+      function (err) {
+        if (err) reject(err);
+        else if (this.changes === 0) reject(new Error('Event not found'));
+        else resolve({ id: eventId, event_name: name, changes: this.changes });
+      }
+    );
+  });
+};
+
 const updateEventStatus = (eventId, status) => {
   return new Promise((resolve, reject) => {
     db.run(
@@ -1456,8 +1549,20 @@ const updateEventSettings = (eventId, settings) => {
       );
     };
 
-    uniqueEventSlug(settings.event_name || 'Hackathon', eventId)
-      .then((nextSlug) => applyUpdate(eventId, nextSlug))
+    getEventById(eventId)
+      .then((current) => {
+        if (!current) {
+          reject(new Error('Event not found'));
+          return;
+        }
+        const keepSlug = current.slug && String(current.slug).trim();
+        if (keepSlug) {
+          applyUpdate(eventId, keepSlug);
+          return;
+        }
+        return uniqueEventSlug(settings.event_name || current.event_name || 'Hackathon', eventId)
+          .then((nextSlug) => applyUpdate(eventId, nextSlug));
+      })
       .catch(reject);
   });
 };
@@ -3105,6 +3210,10 @@ module.exports = {
   createMagicToken,
   validateMagicToken,
   markTokenAsUsed,
+  createRegistrationInvite,
+  getRegistrationInvite,
+  markRegistrationInviteUsed,
+  deleteRegistrationInvite,
   syncTables,
   initializeChessBoardTables,
   getTables,
@@ -3150,6 +3259,7 @@ module.exports = {
   listEvents,
   listVisibleEvents,
   createEvent,
+  renameEvent,
   updateEventStatus,
   updateEventSettings,
   getMembership,

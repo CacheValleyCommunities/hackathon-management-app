@@ -78,7 +78,7 @@
                     {{#if this.team_members.length}}
                     <div class="mb-3 pb-3 border-b border-gray-100">
                         <p class="text-xs text-gray-500 mb-1.5 font-semibold uppercase tracking-wide">Team Members</p>
-                        <p class="text-sm text-gray-700 leading-relaxed">{{#each this.team_members}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</p>
+                        <p class="text-sm text-gray-700 leading-relaxed">{{#each this.team_members}}{{memberName this}}{{#unless @last}}, {{/unless}}{{/each}}</p>
                     </div>
                     {{/if}}
 

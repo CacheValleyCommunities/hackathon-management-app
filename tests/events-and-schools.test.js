@@ -31,6 +31,32 @@ describe('event isolation and school accounts', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  test('renaming an event keeps its public slug', async () => {
+    const before = await db.getEventById(secondEvent.id);
+    await db.renameEvent(secondEvent.id, 'Renamed Hackathon');
+    const renamed = await db.getEventById(secondEvent.id);
+    expect(renamed.event_name).toBe('Renamed Hackathon');
+    expect(renamed.slug).toBe(before.slug);
+
+    await db.updateEventSettings(secondEvent.id, {
+      event_name: 'Renamed Again',
+      start_date: renamed.start_date,
+      end_date: renamed.end_date,
+      divisions: renamed.divisions,
+      logo_filename: renamed.logo_filename,
+      hero_banner_image: renamed.hero_banner_image,
+      hero_banner_link: renamed.hero_banner_link,
+      landing_page_content: '# About\n\nA renamed event.',
+      event_dates_text: renamed.event_dates_text
+    });
+    const afterSettings = await db.getEventById(secondEvent.id);
+    expect(afterSettings.event_name).toBe('Renamed Again');
+    expect(afterSettings.slug).toBe(before.slug);
+    expect(afterSettings.landing_page_content).toBe('# About\n\nA renamed event.');
+
+    await expect(db.renameEvent(secondEvent.id, '   ')).rejects.toThrow('Name is required');
+  });
+
   test('the same team name can exist in two events and scores stay in one event', async () => {
     await db.createTeam({
       event_id: firstEvent.id,
@@ -154,5 +180,62 @@ describe('event isolation and school accounts', () => {
     const publicView = await db.getTeamById(first.id, false);
     expect(!publicView.team_members || publicView.team_members.length === 0).toBe(true);
     expect(await db.countSchoolTeams(chaperone.id)).toBe(2);
+  });
+
+  test('a parent invite can be created and consumed once', async () => {
+    const minor = await db.createUser('minor-invite@example.test', 'Minor');
+    const invite = await db.createRegistrationInvite({
+      eventId: firstEvent.id,
+      guardianEmail: 'Parent@Example.test',
+      invitedByUserId: minor.id
+    });
+
+    const stored = await db.getRegistrationInvite(invite.token);
+    expect(stored.guardian_email).toBe('parent@example.test');
+    expect(stored.event_id).toBe(firstEvent.id);
+    expect(stored.invited_by_user_id).toBe(minor.id);
+    expect(stored.used_at).toBeNull();
+    expect(new Date(stored.expires_at).getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
+
+    const firstUse = await db.markRegistrationInviteUsed(invite.token);
+    expect(firstUse.updated).toBe(true);
+    const used = await db.getRegistrationInvite(invite.token);
+    expect(used.used_at).toBeTruthy();
+
+    const secondUse = await db.markRegistrationInviteUsed(invite.token);
+    expect(secondUse.updated).toBe(false);
+    expect((await db.deleteRegistrationInvite(invite.token)).deleted).toBe(false);
+    expect(await db.getRegistrationInvite(invite.token)).toBeTruthy();
+  });
+
+  test('team member contacts round-trip as name and email', async () => {
+    const created = await db.createTeam({
+      event_id: secondEvent.id,
+      name: 'Contact Round Trip',
+      table_name: 'A1',
+      project_name: 'Contacts',
+      registration_type: 'individual',
+      team_members: [
+        { name: 'Ada Lovelace', email: 'ada@example.test' },
+        'Grace Hopper'
+      ]
+    });
+
+    const stored = (await db.getTeams(secondEvent.id, null, true)).find(team => team.id === created.id);
+    expect(stored.team_members).toEqual([
+      { name: 'Ada Lovelace', email: 'ada@example.test' },
+      'Grace Hopper'
+    ]);
+
+    const school = await db.createTeam({
+      event_id: secondEvent.id,
+      name: 'School Contact Drop',
+      table_name: 'A1',
+      project_name: 'No students',
+      registration_type: 'school',
+      team_members: [{ name: 'Should Not Persist', email: 'student@example.test' }]
+    });
+    const storedSchool = await db.getTeamById(school.id, true);
+    expect(!storedSchool.team_members || storedSchool.team_members.length === 0).toBe(true);
   });
 });

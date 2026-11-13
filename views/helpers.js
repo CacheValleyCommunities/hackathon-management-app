@@ -87,6 +87,15 @@ module.exports = {
     });
     return marked.parse(str);
   },
+  memberName: (member) => {
+    if (member == null) return '';
+    if (typeof member === 'string') return member;
+    return member.name || '';
+  },
+  memberEmail: (member) => {
+    if (!member || typeof member === 'string') return '';
+    return member.email || '';
+  },
   formatDate: (date) => {
     if (!date) return '';
     try {

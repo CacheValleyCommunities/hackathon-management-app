@@ -10,6 +10,51 @@ const { checkAndReturnError } = require('../middleware/validation');
 
 router.use(requireSelectedEvent);
 
+const asList = (value) => {
+  if (value == null || value === '') return [];
+  return Array.isArray(value) ? value : [value];
+};
+
+const parseMemberContacts = (body) => {
+  if (body.memberName !== undefined || body.memberEmail !== undefined) {
+    const names = asList(body.memberName);
+    const emails = asList(body.memberEmail);
+    const count = Math.max(names.length, emails.length);
+    const members = [];
+    for (let index = 0; index < count; index += 1) {
+      const name = String(names[index] || '').trim();
+      const email = String(emails[index] || '').trim();
+      if (!name && !email) continue;
+      members.push({ name, email });
+    }
+    return members;
+  }
+
+  const teamMembers = body.teamMembers;
+  if (!teamMembers) return [];
+  if (Array.isArray(teamMembers)) {
+    return teamMembers.filter(member => member && String(member).trim()).map(member => String(member).trim());
+  }
+  if (typeof teamMembers !== 'string') return [];
+  try {
+    const parsed = JSON.parse(teamMembers);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (parseError) {
+    return teamMembers.split(/[,\n]/).map(member => member.trim()).filter(member => member);
+  }
+};
+
+const memberContactsError = (members) => {
+  for (const member of members) {
+    if (typeof member === 'string') continue;
+    if (!member.name) return 'Each team member needs a name.';
+    if (member.email && (member.email.includes(' ') || !member.email.includes('@'))) {
+      return 'Each team member email must be valid.';
+    }
+  }
+  return null;
+};
+
 const teamForRequest = async (req, explicitId) => {
   const user = await db.getUserByEmail(req.session.user.email);
   if (!user) return null;
@@ -195,13 +240,13 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
     const teamId = currentTeam.id;
     const userRole = req.session.user.role === 'admin' ? 'admin' : req.eventRole;
 
-    if (currentTeam.registration_type === 'school' && (req.body.teamMembers || req.body.isUnder18 || req.body.guardianEmail)) {
+    if (currentTeam.registration_type === 'school' && (req.body.memberName || req.body.memberEmail || req.body.teamMembers || req.body.isUnder18 || req.body.guardianEmail)) {
       return res.status(400).render('error', {
         message: 'School teams cannot store student names, ages, or guardian emails.'
       });
     }
 
-    const { projectName, contactEmail, githubLink, websiteLink, readmeContent, teamMembers, screenshotOrders, categoryId, isPublished } = req.body;
+    const { projectName, contactEmail, githubLink, websiteLink, readmeContent, categoryId, isPublished } = req.body;
 
     if (!projectName) {
       return res.render('error', {
@@ -240,27 +285,10 @@ router.post('/team/update', requireParticipant, uploadScreenshots.fields([
       }
     }
 
-    // Parse team members (expecting array from form or JSON string)
-    let teamMembersArray = [];
-    if (teamMembers) {
-      try {
-        if (Array.isArray(teamMembers)) {
-          // Form sends as array
-          teamMembersArray = teamMembers.filter(m => m && m.trim()).map(m => m.trim());
-        } else if (typeof teamMembers === 'string') {
-          // Try JSON first
-          try {
-            const parsed = JSON.parse(teamMembers);
-            teamMembersArray = Array.isArray(parsed) ? parsed : [];
-          } catch (e) {
-            // If not JSON, try comma-separated or newline-separated
-            teamMembersArray = teamMembers.split(/[,\n]/).map(m => m.trim()).filter(m => m);
-          }
-        }
-      } catch (e) {
-        // If parsing fails, use empty array
-        teamMembersArray = [];
-      }
+    const teamMembersArray = currentTeam.registration_type === 'school' ? [] : parseMemberContacts(req.body);
+    const memberError = memberContactsError(teamMembersArray);
+    if (memberError) {
+      return res.render('error', { message: memberError });
     }
 
     // Handle uploaded screenshots

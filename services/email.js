@@ -620,12 +620,52 @@ const sendNewsletter = async (recipients, subject, markdownContent, eventName = 
   };
 };
 
+const sendParentRegistrationInvite = async (parentEmail, eventName = 'Hackathon', continueUrl) => {
+  if (!mg) {
+    init();
+  }
+
+  const fromEmail = process.env.EMAIL_FROM || `noreply@${process.env.MAILGUN_DOMAIN}`;
+  const content = `
+    <h2 style="margin: 0 0 20px 0; font-size: 32px; line-height: 1.12; letter-spacing: -0.018em; font-weight: 700; color: #1a1a1a;">Finish team signup</h2>
+    <p style="margin: 0 0 30px 0; color: #1a1a1a; line-height: 1.58;">A participant under 18 asked you to finish registering a team for <strong>${eventName}</strong>.</p>
+    <p style="margin: 0 0 30px 0; color: #1a1a1a; line-height: 1.58;">The team is not registered yet. Open the link to add each team member's contact details and the project information, then accept the event policies.</p>
+    <p style="margin: 0 0 30px 0;">
+      <a href="${continueUrl}"
+         style="display: inline-block; padding: 12px 32px; background-color: #1a1a1a; color: #ffffff; text-decoration: none; border-radius: 9999px; font-weight: 600; font-size: 16px;">
+        Finish signup
+      </a>
+    </p>
+    <p style="margin: 0 0 15px 0; font-size: 16px; color: #666666;">Or copy and paste this link into your browser:</p>
+    <p style="margin: 0 0 30px 0; word-break: break-all; color: #1a1a1a; font-size: 14px; padding: 12px; background-color: #f5f5f5; border-radius: 4px;">${continueUrl}</p>
+    <p style="margin: 0; font-size: 14px; color: #666666; line-height: 1.5;">This link expires in 7 days. If you were not expecting it, you can ignore this email.</p>
+  `;
+  const htmlContent = mediumEmailTemplate(content, eventName);
+  const textContent = `${eventName} - Finish team signup\n\nA participant under 18 asked you to finish registering a team for ${eventName}.\n\nThe team is not registered yet. Open this link to add team member contacts and project information:\n${continueUrl}\n\nThis link expires in 7 days.`;
+
+  try {
+    const response = await mg.messages.create(process.env.MAILGUN_DOMAIN, {
+      from: fromEmail,
+      to: parentEmail,
+      subject: `Finish signup for ${eventName}`,
+      html: htmlContent,
+      text: textContent
+    });
+    console.log('Parent registration invite sent:', response.id);
+    return response;
+  } catch (error) {
+    console.error('Error sending parent registration invite:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   init,
   sendMagicLink,
   sendTeamRegistrationConfirmation,
   sendJudgeConfirmation,
   sendGuardianNotification,
+  sendParentRegistrationInvite,
   sendDataRemovalRequest,
   sendVolunteerConfirmation,
   sendVolunteerNotificationToAdmin,

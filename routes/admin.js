@@ -97,6 +97,21 @@ router.post('/events/:id/status', async (req, res) => {
   res.redirect('/admin/events');
 });
 
+router.post('/events/:id/rename', async (req, res) => {
+  try {
+    const eventName = (req.body.eventName || '').trim();
+    if (!eventName) return res.redirect('/admin/events?error=Name%20is%20required');
+    const eventId = parseInt(req.params.id, 10);
+    const existing = await db.getEventById(eventId);
+    if (!existing) return res.redirect('/admin/events?error=Event%20not%20found');
+    await db.renameEvent(eventId, eventName);
+    res.redirect('/admin/events');
+  } catch (error) {
+    console.error('Rename event error:', error);
+    res.redirect('/admin/events?error=Could%20not%20rename%20event');
+  }
+});
+
 // Configure multer for file uploads
 const uploadsDir = path.join(__dirname, '../public/uploads');
 if (!fs.existsSync(uploadsDir)) {
