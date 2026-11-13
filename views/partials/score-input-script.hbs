@@ -1,0 +1,118 @@
+<script>
+    (function () {
+        function formatScore(value) {
+            var rounded = Math.round(Number(value) * 10) / 10;
+            if (!isFinite(rounded)) return '';
+            return Math.abs(rounded - Math.round(rounded)) < 0.001 ? String(Math.round(rounded)) : rounded.toFixed(1);
+        }
+
+        function maxOf(input) {
+            var max = Number(input.getAttribute('data-max'));
+            return isFinite(max) && max > 0 ? max : 100;
+        }
+
+        function parseScore(raw, maxScore) {
+            var limit = Number(maxScore);
+            if (!isFinite(limit) || limit <= 0) limit = 100;
+            var text = String(raw == null ? '' : raw).trim().replace(/,/g, '.').replace(/\.$/, '');
+            if (!text) return { ok: false, message: 'Enter a score.' };
+            if (!/^\d+(\.\d)?$/.test(text)) return { ok: false, message: 'Use a number, like 8 or 8.5.' };
+            var value = Number(text);
+            if (!isFinite(value) || value < 0) return { ok: false, message: 'Use a number, like 8 or 8.5.' };
+            if (value > limit) return { ok: false, message: 'The highest score is ' + formatScore(limit) + '.' };
+            return { ok: true, value: value };
+        }
+
+        function showMessage(input, message) {
+            var form = input.form;
+            var slot = form ? form.querySelector('[data-score-message]') : null;
+            if (!slot) return;
+            if (message) {
+                slot.hidden = false;
+                slot.textContent = message;
+            } else {
+                slot.hidden = true;
+                slot.textContent = '';
+            }
+        }
+
+        function appendKey(current, key, max) {
+            var next = String(current || '');
+            if (key === 'delete') return next.slice(0, -1);
+            if (key === '.') {
+                if (next.indexOf('.') !== -1) return next;
+                return (next || '0') + '.';
+            }
+            if (next === '0') next = '';
+            if (next.indexOf('.') !== -1 && next.split('.')[1].length >= 1) return next;
+            var candidate = next + key;
+            var numeric = candidate.replace(/\.$/, '');
+            if (numeric && Number(numeric) > max) return { blocked: true, value: next };
+            return candidate;
+        }
+
+        document.querySelectorAll('[data-score-field]').forEach(function (input) {
+            input.addEventListener('input', function () {
+                showMessage(input, '');
+            });
+            if (input.form) {
+                input.form.addEventListener('submit', function (event) {
+                    var parsed = parseScore(input.value, maxOf(input));
+                    if (!parsed.ok) {
+                        event.preventDefault();
+                        showMessage(input, parsed.message);
+                        return;
+                    }
+                    input.value = formatScore(parsed.value);
+                    showMessage(input, '');
+                });
+            }
+        });
+
+        document.querySelectorAll('[data-score-key]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var form = button.closest('form');
+                var input = form ? form.querySelector('[data-score-field]') : null;
+                if (!input) return;
+                var max = maxOf(input);
+                var key = button.getAttribute('data-score-key');
+                if (key === 'down' || key === 'up') {
+                    var current = parseScore(input.value || '0', max);
+                    var value = current.ok ? current.value : 0;
+                    value = Math.round((value + (key === 'up' ? 1 : -1)) * 10) / 10;
+                    if (value < 0) value = 0;
+                    if (value > max) {
+                        value = max;
+                        showMessage(input, 'The highest score is ' + formatScore(max) + '.');
+                    } else {
+                        showMessage(input, '');
+                    }
+                    input.value = formatScore(value);
+                    return;
+                }
+                var result = appendKey(input.value, key, max);
+                if (result && result.blocked) {
+                    showMessage(input, 'The highest score is ' + formatScore(max) + '.');
+                    return;
+                }
+                input.value = result;
+                showMessage(input, '');
+            });
+        });
+
+        var confirmButton = document.getElementById('confirm-team-button');
+        if (confirmButton) {
+            confirmButton.addEventListener('click', function () {
+                var confirmPanel = document.getElementById('team-confirm');
+                var form = document.getElementById('score-form');
+                var title = document.getElementById('judge-score-title');
+                var absent = document.getElementById('absent-below-score');
+                if (confirmPanel) confirmPanel.hidden = true;
+                if (form) form.hidden = false;
+                if (absent) absent.hidden = false;
+                if (title) title.textContent = 'Score';
+                window.scrollTo(0, 0);
+            });
+        }
+    })();
+</script>

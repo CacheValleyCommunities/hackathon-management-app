@@ -9,6 +9,7 @@ const db = require('../db/database');
 const { requireAdmin } = require('../middleware/rbac');
 const { rememberEvent } = require('../middleware/selected-event');
 const { checkAndReturnError } = require('../middleware/validation');
+const { parseMaxScoreSetting, parseScoreInput } = require('../lib/score-input');
 const emailService = require('../services/email');
 
 const EVENT_ROLES = ['judge', 'participant', 'chaperone'];
@@ -681,12 +682,22 @@ router.post('/settings', requireAdmin, upload.single('logo'), async (req, res) =
 
     // Get current settings to preserve logo and landing page settings if not uploading a new one
     const currentSettings = await db.getEventSettings(req.eventId);
+    const maxScore = parseMaxScoreSetting(req.body.maxScore);
+    if (!maxScore.ok) {
+      return res.render('admin/settings', {
+        title: 'Event Settings',
+        settings: { ...currentSettings, max_score: req.body.maxScore },
+        error: maxScore.message,
+        success: null
+      });
+    }
 
     const settings = {
       event_name: eventName || 'Hackathon',
       start_date: startDate || null,
       end_date: endDate || null,
       divisions: divisionsArray,
+      max_score: maxScore.value,
       logo_filename: currentSettings.logo_filename || null, // Preserve existing logo
       hero_banner_image: currentSettings.hero_banner_image || null, // Preserve landing page settings
       hero_banner_link: currentSettings.hero_banner_link || null,
@@ -1562,9 +1573,11 @@ router.get('/scores/:id/edit', requireAdmin, async (req, res) => {
       return res.redirect('/admin/scores?error=score_not_found');
     }
 
+    const eventSettings = await db.getEventSettings(score.event_id || req.eventId);
     res.render('admin/edit-score', {
       title: 'Edit Score',
       score,
+      maxScore: eventSettings.max_score,
       query: req.query
     });
   } catch (error) {
@@ -1584,10 +1597,12 @@ router.post('/scores/:id/update', requireAdmin, async (req, res) => {
       return res.redirect('/admin/scores?error=score_not_found');
     }
 
-    const scoreNum = parseFloat(req.body.score);
-    if (!Number.isFinite(scoreNum) || scoreNum < 0) {
-      return res.redirect(`/admin/scores/${id}/edit?error=${encodeURIComponent('Enter a score of 0 or higher.')}`);
+    const eventSettings = await db.getEventSettings(score.event_id || req.eventId);
+    const parsedScore = parseScoreInput(req.body.score, eventSettings.max_score);
+    if (!parsedScore.ok) {
+      return res.redirect(`/admin/scores/${id}/edit?error=${encodeURIComponent(parsedScore.message)}`);
     }
+    const scoreNum = parsedScore.value;
 
     const notes = req.body.notes || '';
     const notesError = await checkAndReturnError(notes, 'Notes');

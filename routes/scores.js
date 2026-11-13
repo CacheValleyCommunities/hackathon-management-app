@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db/database');
 const { requireJudge, requireSelectedEvent } = require('../middleware/rbac');
 const { checkAndReturnError } = require('../middleware/validation');
+const { formatScore, parseScoreInput } = require('../lib/score-input');
 
 const scoreEligibilityMessage = (reason) => {
   if (reason === 'team_full') {
@@ -469,10 +470,13 @@ router.get('/enter/:teamName', requireJudge, async (req, res) => {
 
     res.render('scores/enter', {
       title: `Score Entry - ${teamName}`,
+      judgeShell: true,
       teamName,
       tableName,
       round,
       existingScore,
+      scoreValue: existingScore ? formatScore(existingScore.score) : '',
+      maxScore: eventSettings.max_score,
       isEdit: !!existingScore,
       query: req.query
     });
@@ -551,13 +555,24 @@ router.post('/submit', requireJudge, async (req, res) => {
     const { teamName, tableName, round, score, notes } = req.body;
     const judgeEmail = req.session.user.email;
     const roundNum = parseInt(round) || 1;
-    const scoreNum = parseFloat(score);
+    const autoValue = req.body.auto || req.query.auto;
+    const wasAutoAssigned = autoValue === '1' || autoValue === 1 || autoValue === true || autoValue === 'true';
+    const parsedScore = parseScoreInput(score, eventSettings.max_score);
 
-    if (!teamName || !tableName || isNaN(scoreNum)) {
+    if (!teamName || !tableName || !parsedScore.ok) {
+      if (teamName) {
+        const params = new URLSearchParams({
+          round: String(roundNum),
+          error: parsedScore.ok ? 'Enter the team and table, then try again.' : parsedScore.message
+        });
+        if (wasAutoAssigned) params.set('auto', '1');
+        return res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?${params.toString()}`);
+      }
       return res.render('error', {
         message: 'Invalid score data. Please try again.'
       });
     }
+    const scoreNum = parsedScore.value;
 
     // Check if round is locked
     const isLocked = await db.isRoundLocked(req.eventId, roundNum);
@@ -579,7 +594,9 @@ router.post('/submit', requireJudge, async (req, res) => {
       const notesError = await checkAndReturnError(notes, 'Notes');
       if (notesError) {
         // Redirect back to score entry page with error
-        return res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?round=${roundNum}&error=${encodeURIComponent(notesError)}`);
+        const params = new URLSearchParams({ round: String(roundNum), error: notesError });
+        if (wasAutoAssigned) params.set('auto', '1');
+        return res.redirect(`/scores/enter/${encodeURIComponent(teamName)}?${params.toString()}`);
       }
     }
 
@@ -589,11 +606,6 @@ router.post('/submit', requireJudge, async (req, res) => {
     // Mark team assignment as completed
     await db.markAssignmentCompleted(req.eventId, judgeEmail, teamName, roundNum);
 
-    // Check if this was from the auto-queue system
-    // Handle both string '1' and number 1, and check both body and query
-    const autoValue = req.body.auto || req.query.auto;
-    const wasAutoAssigned = autoValue === '1' || autoValue === 1 || autoValue === true || autoValue === 'true';
-    
     // Debug logging (remove in production if needed)
     if (process.env.NODE_ENV === 'development') {
       console.log('Score submission - auto check:', {

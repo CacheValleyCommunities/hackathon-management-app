@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { migrateEvents, slugify } = require('./migrate-events');
+const { resolveMaxScore } = require('../lib/score-input');
 
 const DB_PATH = process.env.JUDGING_DB_PATH || path.join(__dirname, 'judging.db');
 
@@ -411,6 +412,7 @@ const createTables = () => {
         db.run(`ALTER TABLE event_settings ADD COLUMN landing_page_content TEXT`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN event_dates_text TEXT`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN judging_locked INTEGER DEFAULT 0`, () => { });
+        db.run(`ALTER TABLE event_settings ADD COLUMN max_score REAL DEFAULT 100`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN winners TEXT DEFAULT '{}'`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN slug TEXT`, () => { });
         db.run(`ALTER TABLE event_settings ADD COLUMN status TEXT DEFAULT 'open'`, () => { });
@@ -1382,7 +1384,8 @@ const parseEventRow = (row) => {
     divisions,
     judging_locked: row.judging_locked === 1,
     winners,
-    status: row.status || 'open'
+    status: row.status || 'open',
+    max_score: resolveMaxScore(row.max_score)
   };
 };
 
@@ -1398,7 +1401,8 @@ const emptyEventSettings = () => ({
   current_round: 1,
   locked_rounds: '[]',
   judging_locked: false,
-  winners: {}
+  winners: {},
+  max_score: 100
 });
 
 const getEventById = (eventId) => {
@@ -1535,11 +1539,12 @@ const updateEventSettings = (eventId, settings) => {
       ? JSON.stringify(settings.divisions)
       : (settings.divisions || '[]');
 
-    const applyUpdate = (id, nextSlug) => {
+    const applyUpdate = (id, nextSlug, maxScore) => {
       db.run(
         `UPDATE event_settings 
          SET event_name = ?, slug = ?, start_date = ?, end_date = ?, divisions = ?, logo_filename = ?, 
              hero_banner_image = ?, hero_banner_link = ?, landing_page_content = ?, event_dates_text = ?,
+             max_score = ?,
              updated_at = datetime("now")
          WHERE id = ?`,
         [
@@ -1553,6 +1558,7 @@ const updateEventSettings = (eventId, settings) => {
           settings.hero_banner_link || null,
           settings.landing_page_content || null,
           settings.event_dates_text || null,
+          maxScore,
           id
         ],
         function (err) {
@@ -1568,13 +1574,16 @@ const updateEventSettings = (eventId, settings) => {
           reject(new Error('Event not found'));
           return;
         }
+        const maxScore = resolveMaxScore(
+          settings.max_score == null || settings.max_score === '' ? current.max_score : settings.max_score
+        );
         const keepSlug = current.slug && String(current.slug).trim();
         if (keepSlug) {
-          applyUpdate(eventId, keepSlug);
+          applyUpdate(eventId, keepSlug, maxScore);
           return;
         }
         return uniqueEventSlug(settings.event_name || current.event_name || 'Hackathon', eventId)
-          .then((nextSlug) => applyUpdate(eventId, nextSlug));
+          .then((nextSlug) => applyUpdate(eventId, nextSlug, maxScore));
       })
       .catch(reject);
   });

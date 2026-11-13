@@ -60,6 +60,7 @@ const ensureDefaultEvent = async (db) => {
   await addColumn(db, 'event_settings', 'landing_page_content', 'TEXT');
   await addColumn(db, 'event_settings', 'event_dates_text', 'TEXT');
   await addColumn(db, 'event_settings', 'judging_locked', 'INTEGER DEFAULT 0');
+  await addColumn(db, 'event_settings', 'max_score', 'REAL DEFAULT 100');
   await addColumn(db, 'event_settings', 'winners', "TEXT DEFAULT '{}'");
 
   let event = await getSql(db, 'SELECT * FROM event_settings ORDER BY id ASC LIMIT 1');
